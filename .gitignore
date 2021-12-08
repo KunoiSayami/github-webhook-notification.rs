@@ -9,5 +9,5 @@ target/
 .idea/
 .vscode/
 
-config/*.toml
-!config/*.default
+data/*.toml
+!data/*.default

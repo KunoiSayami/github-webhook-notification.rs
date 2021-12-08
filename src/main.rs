@@ -139,10 +139,9 @@ async fn async_main() -> anyhow::Result<()> {
 
 fn main() -> anyhow::Result<()> {
     env_logger::Builder::from_default_env()
-        .filter_module("sqlx::query", log::LevelFilter::Warn)
         .init();
 
-    clap::App::new("probe-server")
+    clap::App::new("github-webhook-notification")
         .version(SERVER_VERSION)
         .get_matches();
 
