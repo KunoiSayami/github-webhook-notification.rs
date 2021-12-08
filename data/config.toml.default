@@ -1,0 +1,8 @@
+[server]
+bind = ""
+port = 25511
+token = ""
+
+[telegram]
+bot_token = ""
+owner = 0
