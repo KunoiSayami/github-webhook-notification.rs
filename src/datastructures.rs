@@ -15,14 +15,12 @@
  ** along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-
-use std::fmt::Formatter;
-use std::ops::Index;
 use actix_web::dev::RequestHead;
 use actix_web::guard::Guard;
 use log::info;
 use serde_derive::{Deserialize, Serialize};
-
+use std::fmt::Formatter;
+use std::ops::Index;
 
 #[derive(Deserialize, Serialize, Debug)]
 pub struct Request {
@@ -48,22 +46,28 @@ impl std::fmt::Display for Request {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         if self.commits.len() == 1 {
             let item = self.commits.index(0);
-            write!(f, "🔨 <a href=\"{url}\">{count} new commit</a><b>to {git_ref}</b>:\n{commits}",
+            write!(
+                f,
+                "🔨 <a href=\"{url}\">{count} new commit</a> <b>to {git_ref}</b>:\n{commits}",
                 url = item.url(),
                 count = 1,
                 git_ref = self.remote_ref(),
                 commits = item
             )
         } else {
-            let l = self.commits.iter()
+            let l = self
+                .commits
+                .iter()
                 .map(|x| x.display(true))
                 .collect::<Vec<String>>()
                 .join("\n");
-            write!(f, "🔨 <a href=\"{url}\">{count} new commits</a><b>to {git_ref}</b>:\n{commits}",
-                   url = self.compare(),
-                   count = self.commits.len(),
-                   git_ref = self.remote_ref(),
-                   commits = l,
+            write!(
+                f,
+                "🔨 <a href=\"{url}\">{count} new commits</a> <b>to {git_ref}</b>:\n{commits}",
+                url = self.compare(),
+                count = self.commits.len(),
+                git_ref = self.remote_ref(),
+                commits = l,
             )
         }
     }
@@ -97,10 +101,11 @@ impl Commit {
         } else {
             self.message()
         };
-        format!("<a href=\"{url}\">{commit_id}</a>: {content}",
-               url = self.url(),
-               commit_id = &self.id()[..8],
-               content = content
+        format!(
+            "<a href=\"{url}\">{commit_id}</a>: {content}",
+            url = self.url(),
+            commit_id = &self.id()[..8],
+            content = content
         )
     }
 }
@@ -110,8 +115,6 @@ impl std::fmt::Display for Commit {
         write!(f, "{}", self.display(false))
     }
 }
-
-
 
 #[derive(Deserialize, Serialize, Debug, Default)]
 pub struct Response {
@@ -152,9 +155,7 @@ impl From<Option<String>> for AuthorizationGuard {
 
 impl From<&String> for AuthorizationGuard {
     fn from(s: &String) -> Self {
-        Self {
-            token: s.clone(),
-        }
+        Self { token: s.clone() }
     }
 }
 
@@ -166,13 +167,14 @@ impl From<&str> for AuthorizationGuard {
     }
 }
 
+// TODO: Fix this authorization
 impl Guard for AuthorizationGuard {
     fn check(&self, request: &RequestHead) -> bool {
         info!("calling");
         if let Some(val) = request.uri.query() {
             info!("{}", val);
             //return self.token.len() != 6 && val == &self.token;
-            return true
+            return true;
         }
         true
     }

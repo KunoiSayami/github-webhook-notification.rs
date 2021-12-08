@@ -15,16 +15,16 @@
  ** along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-use std::sync::Arc;
-use actix_web::{App, HttpRequest, HttpResponse, HttpServer, web};
+use crate::datastructures::Response;
+use crate::Command::Text;
 use actix_web::http::Method;
-use tokio::sync::{mpsc, Mutex};
-use log::{debug, error, info};
-use teloxide::Bot;
+use actix_web::{web, App, HttpRequest, HttpResponse, HttpServer};
+use log::{debug, error, info, warn};
+use std::sync::Arc;
 use teloxide::prelude::{Request, Requester, RequesterExt};
 use teloxide::types::ParseMode;
-use crate::Command::Text;
-use crate::datastructures::Response;
+use teloxide::Bot;
+use tokio::sync::{mpsc, Mutex};
 
 mod configure;
 mod datastructures;
@@ -48,20 +48,22 @@ async fn process_send_message(
     mut rx: mpsc::Receiver<Command>,
 ) -> anyhow::Result<()> {
     if bot_token.is_empty() {
-        info!("Token is empty, skipped all send message request.");
+        warn!("Token is empty, skipped all send message request.");
         while let Some(cmd) = rx.recv().await {
             match cmd {
                 Command::Terminate => break,
                 _ => {}
             }
         }
-        return Ok(())
+        return Ok(());
     }
     let bot = Bot::new(bot_token);
     let bot = match api_server {
         Some(api) => bot.set_api_url(api.parse()?),
         None => bot,
     };
+
+    // TODO: Disable preview web page
     let bot = bot.parse_mode(ParseMode::Html);
     while let Some(cmd) = rx.recv().await {
         match cmd {
@@ -77,7 +79,6 @@ async fn process_send_message(
     Ok(())
 }
 
-
 async fn route_post(
     _req: HttpRequest,
     payload: web::Json<datastructures::Request>,
@@ -88,14 +89,13 @@ async fn route_post(
     Ok(HttpResponse::Ok().json(Response::new_ok()))
 }
 
-
-
 async fn async_main() -> anyhow::Result<()> {
     let config = crate::configure::Config::new("data/config.toml")?;
 
     let (bot_tx, bot_rx) = mpsc::channel(1024);
 
-    let authorization_guard = crate::datastructures::AuthorizationGuard::from(config.server().token());
+    let authorization_guard =
+        crate::datastructures::AuthorizationGuard::from(config.server().token());
     let bind_addr = config.get_bind_params();
 
     let extra_data = Arc::new(Mutex::new(ExtraData {
@@ -120,16 +120,14 @@ async fn async_main() -> anyhow::Result<()> {
                         .data(extra_data.clone())
                         .route("", web::method(Method::POST).to(route_post)),
                 )
-                .service(
-                    web::scope("/")
-                    .route(
+                .service(web::scope("/").route(
                     "",
                     web::method(Method::GET).to(|| HttpResponse::Ok().json(Response::new_ok())),
                 ))
                 .route("/", web::to(HttpResponse::Forbidden))
         })
-            .bind(&bind_addr)?
-            .run(),
+        .bind(&bind_addr)?
+        .run(),
     );
 
     server.await??;
@@ -140,8 +138,7 @@ async fn async_main() -> anyhow::Result<()> {
 }
 
 fn main() -> anyhow::Result<()> {
-    env_logger::Builder::from_default_env()
-        .init();
+    env_logger::Builder::from_default_env().init();
 
     clap::App::new("github-webhook-notification")
         .version(SERVER_VERSION)
