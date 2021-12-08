@@ -16,10 +16,102 @@
  */
 
 
+use std::fmt::Formatter;
+use std::ops::Index;
 use actix_web::dev::RequestHead;
 use actix_web::guard::Guard;
-use log::debug;
+use log::info;
 use serde_derive::{Deserialize, Serialize};
+
+
+#[derive(Deserialize, Serialize, Debug)]
+pub struct Request {
+    #[serde(rename = "ref")]
+    remote_ref: String,
+    commits: Vec<Commit>,
+    compare: String,
+}
+
+impl Request {
+    pub fn remote_ref(&self) -> &str {
+        &self.remote_ref
+    }
+    pub fn commits(&self) -> &Vec<Commit> {
+        &self.commits
+    }
+    pub fn compare(&self) -> &str {
+        &self.compare
+    }
+}
+
+impl std::fmt::Display for Request {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        if self.commits.len() == 1 {
+            let item = self.commits.index(0);
+            write!(f, "🔨 <a href=\"{url}\">{count} new commit</a><b>to {git_ref}</b>:\n{commits}",
+                url = item.url(),
+                count = 1,
+                git_ref = self.remote_ref(),
+                commits = item
+            )
+        } else {
+            let l = self.commits.iter()
+                .map(|x| x.display(true))
+                .collect::<Vec<String>>()
+                .join("\n");
+            write!(f, "🔨 <a href=\"{url}\">{count} new commits</a><b>to {git_ref}</b>:\n{commits}",
+                   url = self.compare(),
+                   count = self.commits.len(),
+                   git_ref = self.remote_ref(),
+                   commits = l,
+            )
+        }
+    }
+}
+
+#[derive(Deserialize, Serialize, Debug)]
+pub struct Commit {
+    id: String,
+    message: String,
+    url: String,
+}
+
+impl Commit {
+    pub fn id(&self) -> &String {
+        &self.id
+    }
+    pub fn message(&self) -> &str {
+        &self.message
+    }
+    pub fn url(&self) -> &str {
+        &self.url
+    }
+
+    pub fn display(&self, title_only: bool) -> String {
+        let content = if title_only {
+            if self.message.contains('\n') {
+                self.message().split_once("\n").unwrap().0
+            } else {
+                self.message()
+            }
+        } else {
+            self.message()
+        };
+        format!("<a href=\"{url}\">{commit_id}</a>: {content}",
+               url = self.url(),
+               commit_id = &self.id()[..8],
+               content = content
+        )
+    }
+}
+
+impl std::fmt::Display for Commit {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.display(false))
+    }
+}
+
+
 
 #[derive(Deserialize, Serialize, Debug, Default)]
 pub struct Response {
@@ -76,8 +168,9 @@ impl From<&str> for AuthorizationGuard {
 
 impl Guard for AuthorizationGuard {
     fn check(&self, request: &RequestHead) -> bool {
+        info!("calling");
         if let Some(val) = request.uri.query() {
-            debug!("{}", val);
+            info!("{}", val);
             //return self.token.len() != 6 && val == &self.token;
             return true
         }

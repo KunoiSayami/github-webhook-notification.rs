@@ -17,11 +17,13 @@
 
 use std::sync::Arc;
 use actix_web::{App, HttpRequest, HttpResponse, HttpServer, web};
+use actix_web::http::Method;
 use tokio::sync::{mpsc, Mutex};
 use log::{debug, error, info};
 use teloxide::Bot;
 use teloxide::prelude::{Request, Requester, RequesterExt};
 use teloxide::types::ParseMode;
+use crate::Command::Text;
 use crate::datastructures::Response;
 
 mod configure;
@@ -37,7 +39,6 @@ enum Command {
 
 struct ExtraData {
     bot_tx: mpsc::Sender<Command>,
-    watchdog_tx: mpsc::Sender<Command>,
 }
 
 async fn process_send_message(
@@ -79,9 +80,11 @@ async fn process_send_message(
 
 async fn route_post(
     _req: HttpRequest,
-    payload: web::Json<datastructures::Response>,
+    payload: web::Json<datastructures::Request>,
     data: web::Data<Arc<Mutex<ExtraData>>>,
 ) -> actix_web::Result<HttpResponse> {
+    let d = data.lock().await;
+    d.bot_tx.send(Text(payload.to_string())).await.unwrap();
     Ok(HttpResponse::Ok().json(Response::new_ok()))
 }
 
@@ -91,14 +94,12 @@ async fn async_main() -> anyhow::Result<()> {
     let config = crate::configure::Config::new("data/config.toml")?;
 
     let (bot_tx, bot_rx) = mpsc::channel(1024);
-    let (watchdog_tx, watchdog_rx) = mpsc::channel(1024);
 
     let authorization_guard = crate::datastructures::AuthorizationGuard::from(config.server().token());
     let bind_addr = config.get_bind_params();
 
     let extra_data = Arc::new(Mutex::new(ExtraData {
         bot_tx: bot_tx.clone(),
-        watchdog_tx: watchdog_tx.clone(),
     }));
     let msg_sender = tokio::spawn(process_send_message(
         config.telegram().bot_token().to_string(),
@@ -117,11 +118,13 @@ async fn async_main() -> anyhow::Result<()> {
                     web::scope("/")
                         .guard(authorization_guard.to_owned())
                         .data(extra_data.clone())
-                        .route("", web::post().to(route_post)),
+                        .route("", web::method(Method::POST).to(route_post)),
                 )
-                .service(web::scope("/").route(
+                .service(
+                    web::scope("/")
+                    .route(
                     "",
-                    web::get().to(|| HttpResponse::Ok().json(Response::new_ok())),
+                    web::method(Method::GET).to(|| HttpResponse::Ok().json(Response::new_ok())),
                 ))
                 .route("/", web::to(HttpResponse::Forbidden))
         })
@@ -131,7 +134,6 @@ async fn async_main() -> anyhow::Result<()> {
 
     server.await??;
     bot_tx.send(Command::Terminate).await?;
-    watchdog_tx.send(Command::Terminate).await?;
     msg_sender.await??;
 
     Ok(())

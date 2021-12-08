@@ -81,9 +81,3 @@ impl Server {
         &self.token
     }
 }
-
-#[derive(Deserialize, Serialize)]
-pub struct Request {
-    #[serde(rename = "ref")]
-    remote_ref: String,
-}
