@@ -17,10 +17,10 @@
 
 use actix_web::dev::RequestHead;
 use actix_web::guard::Guard;
-use log::info;
 use serde_derive::{Deserialize, Serialize};
 use std::fmt::Formatter;
 use std::ops::Index;
+use log::debug;
 
 #[derive(Deserialize, Serialize, Debug)]
 pub struct Request {
@@ -45,7 +45,7 @@ impl Request {
 impl std::fmt::Display for Request {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         if self.commits.len() == 1 {
-            let item = self.commits.index(0);
+            let item = self.commits().index(0);
             write!(
                 f,
                 "🔨 <a href=\"{url}\">{count} new commit</a> <b>to {git_ref}</b>:\n{commits}",
@@ -167,15 +167,12 @@ impl From<&str> for AuthorizationGuard {
     }
 }
 
-// TODO: Fix this authorization
 impl Guard for AuthorizationGuard {
     fn check(&self, request: &RequestHead) -> bool {
-        info!("calling");
-        if let Some(val) = request.uri.query() {
-            info!("{}", val);
-            //return self.token.len() != 6 && val == &self.token;
-            return true;
+        if let Some(val) = request.headers.get("X-Hub-Signature-256") {
+            debug!("{:?}, {}", val, &self.token);
+            return self.token.len() != 7 && val == &self.token;
         }
-        true
+        false
     }
 }

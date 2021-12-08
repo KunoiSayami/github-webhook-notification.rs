@@ -95,8 +95,7 @@ async fn async_main() -> anyhow::Result<()> {
     let (bot_tx, bot_rx) = mpsc::channel(1024);
 
     let authorization_guard =
-        crate::datastructures::AuthorizationGuard::from(config.server().token());
-    let bind_addr = config.get_bind_params();
+        crate::datastructures::AuthorizationGuard::from(config.server().secrets());
 
     let extra_data = Arc::new(Mutex::new(ExtraData {
         bot_tx: bot_tx.clone(),
@@ -108,7 +107,7 @@ async fn async_main() -> anyhow::Result<()> {
         bot_rx,
     ));
 
-    info!("Bind address: {}", &bind_addr);
+    info!("Bind address: {}", config.server().bind());
 
     let server = tokio::spawn(
         HttpServer::new(move || {
@@ -117,6 +116,7 @@ async fn async_main() -> anyhow::Result<()> {
                 .service(
                     web::scope("/")
                         .guard(authorization_guard.to_owned())
+                        // TODO:
                         .data(extra_data.clone())
                         .route("", web::method(Method::POST).to(route_post)),
                 )
@@ -126,7 +126,7 @@ async fn async_main() -> anyhow::Result<()> {
                 ))
                 .route("/", web::to(HttpResponse::Forbidden))
         })
-        .bind(&bind_addr)?
+        .bind(config.server().bind())?
         .run(),
     );
 

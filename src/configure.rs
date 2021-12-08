@@ -17,34 +17,32 @@
 
 use serde_derive::{Deserialize, Serialize};
 use std::path::Path;
+use sha2::{Sha256, Digest};
 
 #[derive(Deserialize, Serialize)]
-pub struct Config {
-    server: Server,
+pub struct TomlConfig {
+    server: TomlServer,
     telegram: Telegram,
 }
 
-impl Config {
-    pub fn new<P: AsRef<Path>>(path: P) -> anyhow::Result<Config> {
+impl TomlConfig {
+    pub fn new<P: AsRef<Path>>(path: P) -> anyhow::Result<TomlConfig> {
         let contents = std::fs::read_to_string(&path)?;
         let contents_str = contents.as_str();
 
         Ok(toml::from_str(contents_str)?)
     }
 
-    pub fn server(&self) -> &Server {
+    pub fn server(&self) -> &TomlServer {
         &self.server
     }
     pub fn telegram(&self) -> &Telegram {
         &self.telegram
     }
 
-    pub fn get_bind_params(&self) -> String {
-        format!("{}:{}", self.server().bind(), self.server().port())
-    }
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct Telegram {
     bot_token: String,
     api_server: Option<String>,
@@ -63,21 +61,80 @@ impl Telegram {
     }
 }
 
-#[derive(Deserialize, Serialize)]
-pub struct Server {
-    bind: String,
-    port: u16,
-    token: String,
+#[derive(Deserialize, Serialize, Debug)]
+pub struct Config {
+    server: Server,
+    telegram: Telegram,
 }
 
-impl Server {
+impl Config {
+    pub fn server(&self) -> &Server {
+        &self.server
+    }
+    pub fn telegram(&self) -> &Telegram {
+        &self.telegram
+    }
+}
+
+impl Config {
+    pub fn new<P: AsRef<Path>>(path: P) -> anyhow::Result<Config> {
+        let config = TomlConfig::new(path)?;
+        Ok(Self::from(&config))
+    }
+
+}
+
+impl From<&TomlConfig> for Config {
+    fn from(config: &TomlConfig) -> Self {
+        Self {
+            server: Server::from(config.server()),
+            telegram: config.telegram().clone()
+        }
+    }
+}
+
+#[derive(Deserialize, Serialize)]
+pub struct TomlServer {
+    bind: String,
+    port: u16,
+    secrets: String,
+}
+
+impl TomlServer {
     pub fn bind(&self) -> &str {
         &self.bind
     }
     pub fn port(&self) -> u16 {
         self.port
     }
-    pub fn token(&self) -> &str {
-        &self.token
+    pub fn secrets(&self) -> &str {
+        &self.secrets
+    }
+}
+
+#[derive(Deserialize, Serialize, Debug)]
+pub struct Server {
+    bind: String,
+    secrets_sha256: String,
+}
+
+impl From<&TomlServer> for Server {
+    fn from(s: &TomlServer) -> Self {
+        let mut hasher = Sha256::new();
+        hasher.update(s.secrets());
+        let result = hasher.finalize();
+        Self {
+            bind: format!("{}:{}", s.bind(), s.port()),
+            secrets_sha256: format!("sha256={:x}", result).to_lowercase()
+        }
+    }
+}
+
+impl Server {
+    pub fn bind(&self) -> &String {
+        &self.bind
+    }
+    pub fn secrets(&self) -> &str {
+        &self.secrets_sha256
     }
 }

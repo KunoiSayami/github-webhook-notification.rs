@@ -1,7 +1,7 @@
 [server]
 bind = ""
 port = 25511
-token = ""
+secrets = ""
 
 [telegram]
 bot_token = ""
