@@ -15,9 +15,10 @@
  ** along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+use log::warn;
 use serde_derive::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::path::Path;
-use sha2::{Sha256, Digest};
 
 #[derive(Deserialize, Serialize)]
 pub struct TomlConfig {
@@ -39,7 +40,6 @@ impl TomlConfig {
     pub fn telegram(&self) -> &Telegram {
         &self.telegram
     }
-
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
@@ -81,14 +81,13 @@ impl Config {
         let config = TomlConfig::new(path)?;
         Ok(Self::from(&config))
     }
-
 }
 
 impl From<&TomlConfig> for Config {
     fn from(config: &TomlConfig) -> Self {
         Self {
             server: Server::from(config.server()),
-            telegram: config.telegram().clone()
+            telegram: config.telegram().clone(),
         }
     }
 }
@@ -120,12 +119,18 @@ pub struct Server {
 
 impl From<&TomlServer> for Server {
     fn from(s: &TomlServer) -> Self {
-        let mut hasher = Sha256::new();
-        hasher.update(s.secrets());
-        let result = hasher.finalize();
+        let secrets = if !s.secrets().is_empty() {
+            let mut hasher = Sha256::new();
+            hasher.update(s.secrets());
+            let result = hasher.finalize();
+            format!("sha256={:x}", result).to_lowercase()
+        } else {
+            warn!("You should set a token to protect your webhook server");
+            "".to_string()
+        };
         Self {
             bind: format!("{}:{}", s.bind(), s.port()),
-            secrets_sha256: format!("sha256={:x}", result).to_lowercase()
+            secrets_sha256: secrets,
         }
     }
 }

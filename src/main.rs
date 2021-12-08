@@ -20,6 +20,7 @@ use crate::Command::Text;
 use actix_web::http::Method;
 use actix_web::{web, App, HttpRequest, HttpResponse, HttpServer};
 use log::{debug, error, info, warn};
+use std::path::Path;
 use std::sync::Arc;
 use teloxide::prelude::{Request, Requester, RequesterExt};
 use teloxide::types::ParseMode;
@@ -50,9 +51,8 @@ async fn process_send_message(
     if bot_token.is_empty() {
         warn!("Token is empty, skipped all send message request.");
         while let Some(cmd) = rx.recv().await {
-            match cmd {
-                Command::Terminate => break,
-                _ => {}
+            if let Command::Terminate = cmd {
+                break;
             }
         }
         return Ok(());
@@ -63,12 +63,13 @@ async fn process_send_message(
         None => bot,
     };
 
-    // TODO: Disable preview web page
     let bot = bot.parse_mode(ParseMode::Html);
     while let Some(cmd) = rx.recv().await {
         match cmd {
             Command::Text(text) => {
-                if let Err(e) = bot.send_message(owner, text).send().await {
+                let mut payload = bot.send_message(owner, text);
+                payload.disable_web_page_preview = Option::from(true);
+                if let Err(e) = payload.send().await {
                     error!("Got error in send message {:?}", e);
                 }
             }
@@ -89,8 +90,8 @@ async fn route_post(
     Ok(HttpResponse::Ok().json(Response::new_ok()))
 }
 
-async fn async_main() -> anyhow::Result<()> {
-    let config = crate::configure::Config::new("data/config.toml")?;
+async fn async_main<P: AsRef<Path>>(path: P) -> anyhow::Result<()> {
+    let config = crate::configure::Config::new(path)?;
 
     let (bot_tx, bot_rx) = mpsc::channel(1024);
 
@@ -138,16 +139,29 @@ async fn async_main() -> anyhow::Result<()> {
 }
 
 fn main() -> anyhow::Result<()> {
-    env_logger::Builder::from_default_env().init();
+    env_logger::Builder::from_default_env()
+        .filter_module("rustls::client", log::LevelFilter::Warn)
+        .init();
 
-    clap::App::new("github-webhook-notification")
+    let arg_matches = clap::App::new("github-webhook-notification")
+        .arg(
+            clap::Arg::with_name("cfg")
+                .long("cfg")
+                .short("c")
+                .help("Specify configure file location")
+                .takes_value(true),
+        )
         .version(SERVER_VERSION)
         .get_matches();
 
     let system = actix::System::new();
     info!("Server version: {}", SERVER_VERSION);
 
-    system.block_on(async_main())?;
+    system.block_on(async_main(
+        arg_matches
+            .value_of("cfg")
+            .unwrap_or("data/probe_client.toml"),
+    ))?;
 
     system.run()?;
 

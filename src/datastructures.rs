@@ -17,10 +17,10 @@
 
 use actix_web::dev::RequestHead;
 use actix_web::guard::Guard;
+use log::debug;
 use serde_derive::{Deserialize, Serialize};
 use std::fmt::Formatter;
 use std::ops::Index;
-use log::debug;
 
 #[derive(Deserialize, Serialize, Debug)]
 pub struct Request {
@@ -28,6 +28,7 @@ pub struct Request {
     remote_ref: String,
     commits: Vec<Commit>,
     compare: String,
+    repository: Repository,
 }
 
 impl Request {
@@ -40,18 +41,23 @@ impl Request {
     pub fn compare(&self) -> &str {
         &self.compare
     }
+    pub fn repository(&self) -> &Repository {
+        &self.repository
+    }
 }
 
 impl std::fmt::Display for Request {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let branch = self.remote_ref().rsplit_once("/").unwrap().1;
+        let git_ref = format!("{}:{}", self.repository(), branch);
         if self.commits.len() == 1 {
             let item = self.commits().index(0);
             write!(
                 f,
-                "🔨 <a href=\"{url}\">{count} new commit</a> <b>to {git_ref}</b>:\n{commits}",
+                "🔨 <a href=\"{url}\">{count} new commit</a> <b>to {git_ref}</b>:\n\n{commits}",
                 url = item.url(),
                 count = 1,
-                git_ref = self.remote_ref(),
+                git_ref = git_ref,
                 commits = item
             )
         } else {
@@ -63,10 +69,10 @@ impl std::fmt::Display for Request {
                 .join("\n");
             write!(
                 f,
-                "🔨 <a href=\"{url}\">{count} new commits</a> <b>to {git_ref}</b>:\n{commits}",
+                "🔨 <a href=\"{url}\">{count} new commits</a> <b>to {git_ref}</b>:\n\n{commits}",
                 url = self.compare(),
                 count = self.commits.len(),
-                git_ref = self.remote_ref(),
+                git_ref = git_ref,
                 commits = l,
             )
         }
@@ -113,6 +119,17 @@ impl Commit {
 impl std::fmt::Display for Commit {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.display(false))
+    }
+}
+
+#[derive(Deserialize, Serialize, Debug)]
+pub struct Repository {
+    full_name: String,
+}
+
+impl std::fmt::Display for Repository {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.full_name)
     }
 }
 
@@ -169,6 +186,10 @@ impl From<&str> for AuthorizationGuard {
 
 impl Guard for AuthorizationGuard {
     fn check(&self, request: &RequestHead) -> bool {
+        if self.token.is_empty() {
+            return true;
+        }
+        // TODO: Implement HMAC check
         if let Some(val) = request.headers.get("X-Hub-Signature-256") {
             debug!("{:?}, {}", val, &self.token);
             return self.token.len() != 7 && val == &self.token;
