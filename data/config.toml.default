@@ -5,4 +5,4 @@ secrets = ""
 
 [telegram]
 bot_token = ""
-owner = 0
+send_to = 0

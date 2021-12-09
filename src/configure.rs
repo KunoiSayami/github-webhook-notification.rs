@@ -15,7 +15,7 @@
  ** along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-use log::warn;
+use log::{error, warn};
 use serde_derive::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::path::Path;
@@ -26,12 +26,26 @@ pub struct TomlConfig {
     telegram: Telegram,
 }
 
+impl TryFrom<&str> for TomlConfig {
+    type Error = anyhow::Error;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        Ok(toml::from_str(value)?)
+    }
+}
+
 impl TomlConfig {
     pub fn new<P: AsRef<Path>>(path: P) -> anyhow::Result<TomlConfig> {
-        let contents = std::fs::read_to_string(&path)?;
-        let contents_str = contents.as_str();
-
-        Ok(toml::from_str(contents_str)?)
+        let contents = std::fs::read_to_string(&path);
+        if let Err(ref e) = contents {
+            error!(
+                "Unable read file {}, Error: {:?}",
+                path.as_ref().display(),
+                e
+            );
+        };
+        let contents = contents?;
+        Self::try_from(contents.as_str())
     }
 
     pub fn server(&self) -> &TomlServer {
@@ -46,7 +60,7 @@ impl TomlConfig {
 pub struct Telegram {
     bot_token: String,
     api_server: Option<String>,
-    owner: i64,
+    send_to: i64,
 }
 
 impl Telegram {
@@ -56,8 +70,8 @@ impl Telegram {
     pub fn api_server(&self) -> &Option<String> {
         &self.api_server
     }
-    pub fn owner(&self) -> i64 {
-        self.owner
+    pub fn send_to(&self) -> i64 {
+        self.send_to
     }
 }
 
@@ -96,7 +110,7 @@ impl From<&TomlConfig> for Config {
 pub struct TomlServer {
     bind: String,
     port: u16,
-    secrets: String,
+    secrets: Option<String>,
 }
 
 impl TomlServer {
@@ -106,7 +120,7 @@ impl TomlServer {
     pub fn port(&self) -> u16 {
         self.port
     }
-    pub fn secrets(&self) -> &str {
+    pub fn secrets(&self) -> &Option<String> {
         &self.secrets
     }
 }
@@ -119,14 +133,15 @@ pub struct Server {
 
 impl From<&TomlServer> for Server {
     fn from(s: &TomlServer) -> Self {
-        let secrets = if !s.secrets().is_empty() {
+        let secrets = if s.secrets().is_none() || s.secrets().as_ref().unwrap().is_empty() {
+            //warn!("You should set a token to protect your webhook server");
+            "".to_string()
+        } else {
+            warn!("This feature not fully implement yet, please leave secret to blank");
             let mut hasher = Sha256::new();
-            hasher.update(s.secrets());
+            hasher.update(s.secrets().as_ref().unwrap());
             let result = hasher.finalize();
             format!("sha256={:x}", result).to_lowercase()
-        } else {
-            warn!("You should set a token to protect your webhook server");
-            "".to_string()
         };
         Self {
             bind: format!("{}:{}", s.bind(), s.port()),

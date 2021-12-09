@@ -23,15 +23,17 @@ use std::fmt::Formatter;
 use std::ops::Index;
 
 #[derive(Deserialize, Serialize, Debug)]
-pub struct Request {
+pub struct GitHubRequest {
     #[serde(rename = "ref")]
     remote_ref: String,
+    after: String,
+    before: String,
     commits: Vec<Commit>,
     compare: String,
     repository: Repository,
 }
 
-impl Request {
+impl GitHubRequest {
     pub fn remote_ref(&self) -> &str {
         &self.remote_ref
     }
@@ -44,9 +46,15 @@ impl Request {
     pub fn repository(&self) -> &Repository {
         &self.repository
     }
+    pub fn after(&self) -> &str {
+        &self.after
+    }
+    pub fn before(&self) -> &str {
+        &self.before
+    }
 }
 
-impl std::fmt::Display for Request {
+impl std::fmt::Display for GitHubRequest {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let branch = self.remote_ref().rsplit_once("/").unwrap().1;
         let git_ref = format!("{}:{}", self.repository(), branch);

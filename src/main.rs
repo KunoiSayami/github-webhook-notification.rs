@@ -18,6 +18,7 @@
 use crate::datastructures::Response;
 use crate::Command::Text;
 use actix_web::http::Method;
+use actix_web::web::Data;
 use actix_web::{web, App, HttpRequest, HttpResponse, HttpServer};
 use log::{debug, error, info, warn};
 use std::path::Path;
@@ -45,7 +46,7 @@ struct ExtraData {
 async fn process_send_message(
     bot_token: String,
     api_server: Option<String>,
-    owner: i64,
+    send_to: i64,
     mut rx: mpsc::Receiver<Command>,
 ) -> anyhow::Result<()> {
     if bot_token.is_empty() {
@@ -67,7 +68,7 @@ async fn process_send_message(
     while let Some(cmd) = rx.recv().await {
         match cmd {
             Command::Text(text) => {
-                let mut payload = bot.send_message(owner, text);
+                let mut payload = bot.send_message(send_to, text);
                 payload.disable_web_page_preview = Option::from(true);
                 if let Err(e) = payload.send().await {
                     error!("Got error in send message {:?}", e);
@@ -82,11 +83,15 @@ async fn process_send_message(
 
 async fn route_post(
     _req: HttpRequest,
-    payload: web::Json<datastructures::Request>,
+    payload: web::Json<datastructures::GitHubRequest>,
     data: web::Data<Arc<Mutex<ExtraData>>>,
 ) -> actix_web::Result<HttpResponse> {
-    let d = data.lock().await;
-    d.bot_tx.send(Text(payload.to_string())).await.unwrap();
+    let sender = data.lock().await;
+    if payload.after().starts_with("000000000000") || payload.before().starts_with("000000000000") {
+        //return Ok(HttpResponse::Ok().json());
+        return Ok(HttpResponse::NoContent().finish())
+    }
+    sender.bot_tx.send(Text(payload.to_string())).await.unwrap();
     Ok(HttpResponse::Ok().json(Response::new_ok()))
 }
 
@@ -104,7 +109,7 @@ async fn async_main<P: AsRef<Path>>(path: P) -> anyhow::Result<()> {
     let msg_sender = tokio::spawn(process_send_message(
         config.telegram().bot_token().to_string(),
         config.telegram().api_server().clone(),
-        config.telegram().owner(),
+        config.telegram().send_to(),
         bot_rx,
     ));
 
@@ -118,7 +123,7 @@ async fn async_main<P: AsRef<Path>>(path: P) -> anyhow::Result<()> {
                     web::scope("/")
                         .guard(authorization_guard.to_owned())
                         // TODO:
-                        .data(extra_data.clone())
+                        .app_data(Data::new(extra_data.clone()))
                         .route("", web::method(Method::POST).to(route_post)),
                 )
                 .service(web::scope("/").route(
@@ -148,6 +153,7 @@ fn main() -> anyhow::Result<()> {
             clap::Arg::with_name("cfg")
                 .long("cfg")
                 .short("c")
+                .default_value("data/config.toml")
                 .help("Specify configure file location")
                 .takes_value(true),
         )
@@ -157,11 +163,7 @@ fn main() -> anyhow::Result<()> {
     let system = actix::System::new();
     info!("Server version: {}", SERVER_VERSION);
 
-    system.block_on(async_main(
-        arg_matches
-            .value_of("cfg")
-            .unwrap_or("data/probe_client.toml"),
-    ))?;
+    system.block_on(async_main(arg_matches.value_of("cfg").unwrap()))?;
 
     system.run()?;
 
