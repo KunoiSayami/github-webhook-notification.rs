@@ -17,7 +17,6 @@
 
 use log::{error, warn};
 use serde_derive::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 use std::path::Path;
 
 #[derive(Deserialize, Serialize)]
@@ -111,6 +110,7 @@ pub struct TomlServer {
     bind: String,
     port: u16,
     secrets: Option<String>,
+    token: Option<String>,
 }
 
 impl TomlServer {
@@ -123,29 +123,38 @@ impl TomlServer {
     pub fn secrets(&self) -> &Option<String> {
         &self.secrets
     }
+    pub fn token(&self) -> &Option<String> {
+        &self.token
+    }
 }
 
 #[derive(Deserialize, Serialize, Debug)]
 pub struct Server {
     bind: String,
-    secrets_sha256: String,
+    secrets: String,
+    token: String,
 }
 
 impl From<&TomlServer> for Server {
     fn from(s: &TomlServer) -> Self {
-        let secrets = if s.secrets().is_none() || s.secrets().as_ref().unwrap().is_empty() {
-            //warn!("You should set a token to protect your webhook server");
-            "".to_string()
-        } else {
-            warn!("This feature not fully implement yet, please leave secret to blank");
-            let mut hasher = Sha256::new();
-            hasher.update(s.secrets().as_ref().unwrap());
-            let result = hasher.finalize();
-            format!("sha256={:x}", result).to_lowercase()
-        };
+        let warning = "Both secrets and token is blank, please fill last one field to make sure your webhook server safe";
+        if s.secrets().is_none() && s.token().is_none() {
+            eprintln!("{}", warning);
+            warn!("{}", warning);
+        } else if let Some(ref secrets) = s.secrets() {
+            if secrets.is_empty() {
+                if let Some(ref token) = s.token() {
+                    if token.is_empty() {
+                        eprintln!("{}", warning);
+                        warn!("{}", warning)
+                    }
+                }
+            }
+        }
         Self {
             bind: format!("{}:{}", s.bind(), s.port()),
-            secrets_sha256: secrets,
+            secrets: s.secrets().clone().unwrap_or_else(|| "".to_string()),
+            token: s.token().clone().unwrap_or_else(|| "".to_string()),
         }
     }
 }
@@ -154,7 +163,10 @@ impl Server {
     pub fn bind(&self) -> &String {
         &self.bind
     }
-    pub fn secrets(&self) -> &str {
-        &self.secrets_sha256
+    pub fn secrets(&self) -> &String {
+        &self.secrets
+    }
+    pub fn token(&self) -> &str {
+        &self.token
     }
 }

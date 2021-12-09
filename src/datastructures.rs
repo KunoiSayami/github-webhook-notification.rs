@@ -145,21 +145,27 @@ impl std::fmt::Display for Repository {
 pub struct Response {
     version: String,
     status: i64,
+    reason: String,
 }
 
 impl Response {
-    #[allow(dead_code)]
     pub fn new(status: i64) -> Self {
         Self {
             version: env!("CARGO_PKG_VERSION").to_string(),
             status,
+            ..Default::default()
         }
     }
 
     pub fn new_ok() -> Self {
+        Self::new(200)
+    }
+
+    pub fn reason(status: i64, reason: &str) -> Self {
         Self {
             version: env!("CARGO_PKG_VERSION").to_string(),
-            status: 200,
+            status,
+            reason: reason.to_string(),
         }
     }
 }
@@ -167,6 +173,18 @@ impl Response {
 #[derive(Clone)]
 pub struct AuthorizationGuard {
     token: String,
+}
+
+impl AuthorizationGuard {
+    fn check_query(&self, query: &str) -> bool {
+        if query.contains('=') {
+            let (key, value) = query.split_once('=').unwrap();
+            if key == "token" && value.eq(&self.token) {
+                return true;
+            }
+        }
+        false
+    }
 }
 
 impl From<Option<String>> for AuthorizationGuard {
@@ -194,13 +212,23 @@ impl From<&str> for AuthorizationGuard {
 
 impl Guard for AuthorizationGuard {
     fn check(&self, request: &RequestHead) -> bool {
+        debug!("url: {:?}", request.uri);
         if self.token.is_empty() {
             return true;
         }
-        // TODO: Implement HMAC check
-        if let Some(val) = request.headers.get("X-Hub-Signature-256") {
-            debug!("{:?}, {}", val, &self.token);
-            return self.token.len() != 7 && val == &self.token;
+
+        let uri = request.uri.to_string();
+        if uri.contains("?") {
+            let (_, queries) = uri.split_once('?').unwrap();
+            if queries.contains('&') {
+                for query in queries.split('&') {
+                    if self.check_query(query) {
+                        return true;
+                    }
+                }
+            } else if self.check_query(queries) {
+                return true;
+            }
         }
         false
     }

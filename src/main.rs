@@ -15,15 +15,17 @@
  ** along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-use crate::datastructures::Response;
+use crate::datastructures::{GitHubRequest, Response};
 use crate::Command::Text;
 use actix_web::http::Method;
 use actix_web::web::Data;
 use actix_web::{web, App, HttpRequest, HttpResponse, HttpServer};
+use hmac::{Hmac, Mac};
 use log::{debug, error, info, warn};
+use sha2::Sha256;
 use std::path::Path;
 use std::sync::Arc;
-use teloxide::prelude::{Request, Requester, RequesterExt};
+use teloxide::prelude::{Request, Requester, RequesterExt, StreamExt};
 use teloxide::types::ParseMode;
 use teloxide::Bot;
 use tokio::sync::{mpsc, Mutex};
@@ -40,6 +42,7 @@ enum Command {
 }
 
 struct ExtraData {
+    secrets: String,
     bot_tx: mpsc::Sender<Command>,
 }
 
@@ -82,16 +85,50 @@ async fn process_send_message(
 }
 
 async fn route_post(
-    _req: HttpRequest,
-    payload: web::Json<datastructures::GitHubRequest>,
+    request: HttpRequest,
+    mut payload: web::Payload,
     data: web::Data<Arc<Mutex<ExtraData>>>,
 ) -> actix_web::Result<HttpResponse> {
-    let sender = data.lock().await;
-    if payload.after().starts_with("000000000000") || payload.before().starts_with("000000000000") {
-        //return Ok(HttpResponse::Ok().json());
-        return Ok(HttpResponse::NoContent().finish())
+    let mut body = web::BytesMut::new();
+    while let Some(chunk) = payload.next().await {
+        let chunk = chunk?;
+
+        if (body.len() + chunk.len()) > 262_144 {
+            return Ok(HttpResponse::BadRequest().json(Response::reason(400, "overflow")));
+        }
+
+        body.extend_from_slice(&chunk);
     }
-    sender.bot_tx.send(Text(payload.to_string())).await.unwrap();
+
+    let sender = data.lock().await;
+    if !sender.secrets.is_empty() {
+        type HmacSha256 = Hmac<Sha256>;
+        let mut h = HmacSha256::new_from_slice(sender.secrets.as_bytes()).unwrap();
+        h.update(&*body);
+        let result = h.finalize();
+        let sha256val = format!("sha256={:x}", result.into_bytes()).to_lowercase();
+        if let Some(val) = request.headers().get("X-Hub-Signature-256") {
+            if !sha256val.eq(val) {
+                return Ok(HttpResponse::Forbidden().json(Response::reason(403, "Checksum error")));
+            }
+        } else {
+            return Ok(
+                HttpResponse::Forbidden().json(Response::reason(403, "Checksum header not found"))
+            );
+        }
+    }
+
+    let request_body = serde_json::from_slice::<GitHubRequest>(&body)?;
+    if request_body.after().starts_with("000000000000")
+        || request_body.before().starts_with("000000000000")
+    {
+        return Ok(HttpResponse::NoContent().finish());
+    }
+    sender
+        .bot_tx
+        .send(Text(request_body.to_string()))
+        .await
+        .unwrap();
     Ok(HttpResponse::Ok().json(Response::new_ok()))
 }
 
@@ -101,9 +138,10 @@ async fn async_main<P: AsRef<Path>>(path: P) -> anyhow::Result<()> {
     let (bot_tx, bot_rx) = mpsc::channel(1024);
 
     let authorization_guard =
-        crate::datastructures::AuthorizationGuard::from(config.server().secrets());
+        crate::datastructures::AuthorizationGuard::from(config.server().token());
 
     let extra_data = Arc::new(Mutex::new(ExtraData {
+        secrets: config.server().secrets().clone(),
         bot_tx: bot_tx.clone(),
     }));
     let msg_sender = tokio::spawn(process_send_message(
@@ -122,7 +160,6 @@ async fn async_main<P: AsRef<Path>>(path: P) -> anyhow::Result<()> {
                 .service(
                     web::scope("/")
                         .guard(authorization_guard.to_owned())
-                        // TODO:
                         .app_data(Data::new(extra_data.clone()))
                         .route("", web::method(Method::POST).to(route_post)),
                 )
