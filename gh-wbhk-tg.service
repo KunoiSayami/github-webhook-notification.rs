@@ -1,0 +1,11 @@
+[Unit]
+Description=github-webhook-telegram
+Wants=network.target nginx.service
+After=network.target nginx.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/github-webhook-notification_linux_amd64 -c /usr/local/etc/gh-wbhk-tg/config.toml
+
+[Install]
+WantedBy=multi-user.target
