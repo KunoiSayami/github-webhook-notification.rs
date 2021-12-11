@@ -2,6 +2,7 @@
 bind = ""
 port = 25511
 secrets = ""
+#token = ""
 
 [telegram]
 bot_token = ""

@@ -18,11 +18,13 @@
 use log::{error, warn};
 use serde_derive::{Deserialize, Serialize};
 use std::path::Path;
+use std::str::FromStr;
+use toml::Value;
 
 #[derive(Deserialize, Serialize)]
 pub struct TomlConfig {
     server: TomlServer,
-    telegram: Telegram,
+    telegram: TomlTelegram,
 }
 
 impl TryFrom<&str> for TomlConfig {
@@ -50,16 +52,16 @@ impl TomlConfig {
     pub fn server(&self) -> &TomlServer {
         &self.server
     }
-    pub fn telegram(&self) -> &Telegram {
+    pub fn telegram(&self) -> &TomlTelegram {
         &self.telegram
     }
 }
 
-#[derive(Deserialize, Serialize, Debug, Clone)]
+#[derive(Deserialize, Serialize, Debug)]
 pub struct Telegram {
     bot_token: String,
     api_server: Option<String>,
-    send_to: i64,
+    send_to: Vec<i64>,
 }
 
 impl Telegram {
@@ -69,8 +71,50 @@ impl Telegram {
     pub fn api_server(&self) -> &Option<String> {
         &self.api_server
     }
-    pub fn send_to(&self) -> i64 {
-        self.send_to
+    pub fn send_to(&self) -> &Vec<i64> {
+        &self.send_to
+    }
+}
+
+impl From<&TomlTelegram> for Telegram {
+    fn from(value: &TomlTelegram) -> Self {
+        let receivers: Vec<i64> = match value.send_to() {
+            Value::String(s) => vec![i64::from_str(s.as_str())
+                .expect("Can't parse string value to i64")],
+            Value::Integer(i) => vec![i.clone()],
+            Value::Array(v) => v.into_iter().map(|x|
+match x {
+    Value::String(s) => i64::from_str(s).expect("Can't parse array string to i64"),
+    Value::Integer(i) => i.clone(),
+    _ => panic!("Unexpected value {:?}", x)
+}
+            ).collect(),
+            _ => panic!("Unexpected value {:?}", value.send_to())
+        };
+        Self {
+            bot_token: value.bot_token().clone(),
+            api_server: value.api_server().clone(),
+            send_to: receivers
+        }
+    }
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct TomlTelegram {
+    bot_token: String,
+    api_server: Option<String>,
+    send_to: Value,
+}
+
+impl TomlTelegram {
+    pub fn bot_token(&self) -> &String {
+        &self.bot_token
+    }
+    pub fn api_server(&self) -> &Option<String> {
+        &self.api_server
+    }
+    pub fn send_to(&self) -> &Value {
+        &self.send_to
     }
 }
 
@@ -100,7 +144,7 @@ impl From<&TomlConfig> for Config {
     fn from(config: &TomlConfig) -> Self {
         Self {
             server: Server::from(config.server()),
-            telegram: config.telegram().clone(),
+            telegram: Telegram::from(config.telegram()),
         }
     }
 }

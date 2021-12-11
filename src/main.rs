@@ -32,6 +32,7 @@ use tokio::sync::{mpsc, Mutex};
 
 mod configure;
 mod datastructures;
+mod test;
 
 const SERVER_VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -49,7 +50,7 @@ struct ExtraData {
 async fn process_send_message(
     bot_token: String,
     api_server: Option<String>,
-    send_to: i64,
+    receiver: Vec<i64>,
     mut rx: mpsc::Receiver<Command>,
 ) -> anyhow::Result<()> {
     if bot_token.is_empty() {
@@ -71,10 +72,12 @@ async fn process_send_message(
     while let Some(cmd) = rx.recv().await {
         match cmd {
             Command::Text(text) => {
-                let mut payload = bot.send_message(send_to, text);
-                payload.disable_web_page_preview = Option::from(true);
-                if let Err(e) = payload.send().await {
-                    error!("Got error in send message {:?}", e);
+                for send_to in receiver.clone() {
+                    let mut payload = bot.send_message(send_to, text.clone());
+                    payload.disable_web_page_preview = Option::from(true);
+                    if let Err(e) = payload.send().await {
+                        error!("Got error in send message {:?}", e);
+                    }
                 }
             }
             Command::Terminate => break,
@@ -147,7 +150,7 @@ async fn async_main<P: AsRef<Path>>(path: P) -> anyhow::Result<()> {
     let msg_sender = tokio::spawn(process_send_message(
         config.telegram().bot_token().to_string(),
         config.telegram().api_server().clone(),
-        config.telegram().send_to(),
+        config.telegram().send_to().clone(),
         bot_rx,
     ));
 
