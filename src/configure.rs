@@ -79,22 +79,24 @@ impl Telegram {
 impl From<&TomlTelegram> for Telegram {
     fn from(value: &TomlTelegram) -> Self {
         let receivers: Vec<i64> = match value.send_to() {
-            Value::String(s) => vec![i64::from_str(s.as_str())
-                .expect("Can't parse string value to i64")],
-            Value::Integer(i) => vec![i.clone()],
-            Value::Array(v) => v.into_iter().map(|x|
-match x {
-    Value::String(s) => i64::from_str(s).expect("Can't parse array string to i64"),
-    Value::Integer(i) => i.clone(),
-    _ => panic!("Unexpected value {:?}", x)
-}
-            ).collect(),
-            _ => panic!("Unexpected value {:?}", value.send_to())
+            Value::String(s) => {
+                vec![i64::from_str(s.as_str()).expect("Can't parse string value to i64")]
+            }
+            Value::Integer(i) => vec![*i],
+            Value::Array(v) => v
+                .iter()
+                .map(|x| match x {
+                    Value::String(s) => i64::from_str(s).expect("Can't parse array string to i64"),
+                    Value::Integer(i) => *i,
+                    _ => panic!("Unexpected value {:?}", x),
+                })
+                .collect(),
+            _ => panic!("Unexpected value {:?}", value.send_to()),
         };
         Self {
             bot_token: value.bot_token().clone(),
             api_server: value.api_server().clone(),
-            send_to: receivers
+            send_to: receivers,
         }
     }
 }

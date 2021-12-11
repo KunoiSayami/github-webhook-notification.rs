@@ -28,6 +28,14 @@ mod test {
         assert_eq!(cfg.telegram().bot_token(), "1145141919:810abcdefg");
         let result = vec![114514, 1919810i64];
         assert_eq!(cfg.telegram().send_to().len(), result.len());
-        assert_eq!(cfg.telegram().send_to().into_iter().zip(&result).filter(|&(a,b)| a == b).count(), result.len());
+        assert_eq!(
+            cfg.telegram()
+                .send_to()
+                .into_iter()
+                .zip(&result)
+                .filter(|&(a, b)| a == b)
+                .count(),
+            result.len()
+        );
     }
 }

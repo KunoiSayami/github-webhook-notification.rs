@@ -26,9 +26,15 @@ jobs:
           profile: minimal
           toolchain: stable
           override: true
-      - uses: actions-rs/cargo@v1
+      - name: Build binary
+        uses: actions-rs/cargo@v1
         with:
           command: build
+          args: --release
+      - name: Running test
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
           args: --release
       - name: Rename binary
         id: rename

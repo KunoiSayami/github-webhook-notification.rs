@@ -218,7 +218,7 @@ impl Guard for AuthorizationGuard {
         }
 
         let uri = request.uri.to_string();
-        if uri.contains("?") {
+        if uri.contains('?') {
             let (_, queries) = uri.split_once('?').unwrap();
             if queries.contains('&') {
                 for query in queries.split('&') {
