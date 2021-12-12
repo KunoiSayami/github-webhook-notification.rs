@@ -15,11 +15,12 @@
  ** along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+#[allow(dead_code)]
 #[cfg(test)]
 mod test {
-    use std::time::Duration;
     use crate::configure::Config;
     use actix_web::{App, HttpServer};
+    use std::time::Duration;
 
     #[test]
     fn test_configure() {
@@ -39,6 +40,19 @@ mod test {
                 .count(),
             result.len()
         );
+        let repositories = cfg.repo_mapping();
+        assert_eq!(repositories.len(), 2);
+        let r1 = repositories.get("114514/1919810");
+        assert!(r1.is_some());
+        let r1 = r1.unwrap();
+        assert!(r1.branch_ignore().is_empty());
+        assert!(!r1.send_to().is_empty());
+        assert_eq!(r1.send_to().len(), 6);
+        let r2 = repositories.get("2147483647/114514");
+        assert!(r2.is_some());
+        let r2 = r2.unwrap();
+        assert_eq!(r2.send_to().len(), 1);
+        assert_eq!(r2.branch_ignore().len(), 2);
     }
 
     async fn server() -> tokio::io::Result<()> {
@@ -48,9 +62,9 @@ mod test {
                 actix_web::web::to(|| actix_web::web::HttpResponse::Ok().finish()),
             )
         })
-            .bind("127.0.0.1:11451")
-            .unwrap()
-            .run();
+        .bind("127.0.0.1:11451")
+        .unwrap()
+        .run();
         let handler = future.handle();
         let server = tokio::spawn(future);
         tokio::time::sleep(Duration::from_secs(1)).await;

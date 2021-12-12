@@ -7,3 +7,9 @@ secrets = ""
 [telegram]
 bot_token = ""
 send_to = 0
+
+# See ../example/sample.toml to check more
+#[[repository]]
+#full_name = ""
+#send_to = 0
+#branch_ignore = []

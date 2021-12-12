@@ -15,14 +15,16 @@
  ** along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-use crate::datastructures::{GitHubPingEvent, GitHubPushEvent, Response};
-use crate::Command::Text;
+use crate::configure::Repository;
+use crate::datastructures::{DisplayableEvent, GitHubPingEvent, GitHubPushEvent, Response};
 use actix_web::http::Method;
 use actix_web::web::Data;
 use actix_web::{web, App, HttpRequest, HttpResponse, HttpServer};
 use hmac::{Hmac, Mac};
 use log::{debug, error, info, warn};
 use sha2::Sha256;
+use std::collections::HashMap;
+use std::fmt::Debug;
 use std::path::Path;
 use std::sync::Arc;
 use teloxide::prelude::{Request, Requester, RequesterExt, StreamExt};
@@ -39,7 +41,14 @@ const SERVER_VERSION: &str = env!("CARGO_PKG_VERSION");
 #[derive(Debug)]
 enum Command {
     Terminate,
+    #[allow(unused)]
+    #[deprecated(
+        since = "1.2.0",
+        note = "You should use Data to direct process GitHub event, \
+        and it will remove in next release"
+    )]
     Text(String),
+    Data(Box<dyn DisplayableEvent>),
 }
 
 struct ExtraData {
@@ -51,6 +60,7 @@ async fn process_send_message(
     bot_token: String,
     api_server: Option<String>,
     receiver: Vec<i64>,
+    specify_configures: HashMap<String, Repository>,
     mut rx: mpsc::Receiver<Command>,
 ) -> anyhow::Result<()> {
     if bot_token.is_empty() {
@@ -71,12 +81,32 @@ async fn process_send_message(
     let bot = bot.parse_mode(ParseMode::Html);
     while let Some(cmd) = rx.recv().await {
         match cmd {
+            #[allow(deprecated)]
             Command::Text(text) => {
                 for send_to in receiver.clone() {
                     let mut payload = bot.send_message(send_to, text.clone());
                     payload.disable_web_page_preview = Option::from(true);
                     if let Err(e) = payload.send().await {
                         error!("Got error in send message {:?}", e);
+                    }
+                }
+            }
+            Command::Data(event) => {
+                if let Some(repository) = specify_configures.get(event.get_full_name()) {
+                    if repository.branch_ignore().contains(&event.branch_name()) {
+                        continue;
+                    }
+                    let target = if repository.send_to().is_empty() {
+                        receiver.clone()
+                    } else {
+                        repository.send_to().clone()
+                    };
+                    for send_to in target {
+                        let mut payload = bot.send_message(send_to, event.to_string());
+                        payload.disable_web_page_preview = Option::from(true);
+                        if let Err(e) = payload.send().await {
+                            error!("Got error in send message {:?}", e);
+                        }
                     }
                 }
             }
@@ -125,7 +155,7 @@ async fn route_post(
         let event = event.to_str();
         if let Err(ref e) = event {
             error!("Parse X-GitHub-Event error: {:?}", e);
-            return Ok(HttpResponse::InternalServerError().finish())
+            return Ok(HttpResponse::InternalServerError().finish());
         }
         let event = event.unwrap();
         match event {
@@ -142,14 +172,15 @@ async fn route_post(
                 }
                 sender
                     .bot_tx
-                    .send(Text(request_body.to_string()))
+                    .send(Command::Data(Box::new(request_body)))
                     .await
                     .unwrap();
                 Ok(HttpResponse::Ok().json(Response::new_ok()))
             }
-            _ => {
-                Ok(HttpResponse::BadRequest().json(Response::reason(400, format!( "Unsupported event type {:?}", event))))
-            }
+            _ => Ok(HttpResponse::BadRequest().json(Response::reason(
+                400,
+                format!("Unsupported event type {:?}", event),
+            ))),
         }
     } else {
         error!("Unknown request: {:?}", request);
@@ -173,6 +204,7 @@ async fn async_main<P: AsRef<Path>>(path: P) -> anyhow::Result<()> {
         config.telegram().bot_token().to_string(),
         config.telegram().api_server().clone(),
         config.telegram().send_to().clone(),
+        config.repo_mapping().clone(),
         bot_rx,
     ));
 

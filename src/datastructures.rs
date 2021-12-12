@@ -17,10 +17,28 @@
 
 use actix_web::dev::RequestHead;
 use actix_web::guard::Guard;
-use log::debug;
 use serde_derive::{Deserialize, Serialize};
-use std::fmt::Formatter;
+use std::fmt::{Debug, Formatter};
 use std::ops::Index;
+
+pub trait DisplayableEvent: std::fmt::Display + Debug + Send + Sync {
+    fn get_full_name(&self) -> &String;
+
+    fn branch_name(&self) -> String;
+}
+
+impl<F: ?Sized + Send + Sync> DisplayableEvent for Box<F>
+where
+    F: DisplayableEvent,
+{
+    fn get_full_name(&self) -> &String {
+        (**self).get_full_name()
+    }
+
+    fn branch_name(&self) -> String {
+        (**self).branch_name()
+    }
+}
 
 #[derive(Deserialize, Serialize, Debug)]
 pub struct GitHubPingEvent {
@@ -32,7 +50,6 @@ impl GitHubPingEvent {
         &self.zen
     }
 }
-
 
 #[derive(Deserialize, Serialize, Debug)]
 pub struct GitHubPushEvent {
@@ -99,6 +116,16 @@ impl std::fmt::Display for GitHubPushEvent {
     }
 }
 
+impl DisplayableEvent for GitHubPushEvent {
+    fn get_full_name(&self) -> &String {
+        self.repository().full_name()
+    }
+
+    fn branch_name(&self) -> String {
+        self.remote_ref().rsplit_once('/').unwrap().1.to_string()
+    }
+}
+
 #[derive(Deserialize, Serialize, Debug)]
 pub struct Commit {
     id: String,
@@ -145,6 +172,12 @@ impl std::fmt::Display for Commit {
 #[derive(Deserialize, Serialize, Debug)]
 pub struct Repository {
     full_name: String,
+}
+
+impl Repository {
+    pub fn full_name(&self) -> &String {
+        &self.full_name
+    }
 }
 
 impl std::fmt::Display for Repository {
@@ -224,7 +257,6 @@ impl From<&str> for AuthorizationGuard {
 
 impl Guard for AuthorizationGuard {
     fn check(&self, request: &RequestHead) -> bool {
-        debug!("url: {:?}", request.uri);
         if self.token.is_empty() {
             return true;
         }

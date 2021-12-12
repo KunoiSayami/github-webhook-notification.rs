@@ -17,14 +17,16 @@
 
 use log::{error, warn};
 use serde_derive::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::path::Path;
 use std::str::FromStr;
 use toml::Value;
 
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize, Serialize, Clone)]
 pub struct TomlConfig {
     server: TomlServer,
     telegram: TomlTelegram,
+    repository: Option<Vec<TomlRepository>>,
 }
 
 impl TryFrom<&str> for TomlConfig {
@@ -55,9 +57,76 @@ impl TomlConfig {
     pub fn telegram(&self) -> &TomlTelegram {
         &self.telegram
     }
+    pub fn repository(&self) -> &Option<Vec<TomlRepository>> {
+        &self.repository
+    }
+
+    pub fn convert_hashmap(&self) -> HashMap<String, Repository> {
+        let mut m = HashMap::new();
+        if let Some(repositories) = &self.repository() {
+            for repository in repositories {
+                m.insert(repository.full_name().clone(), Repository::from(repository));
+            }
+        }
+        m
+    }
 }
 
-#[derive(Deserialize, Serialize, Debug)]
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct TomlRepository {
+    full_name: String,
+    send_to: Option<Value>,
+    branch_ignore: Option<Vec<String>>,
+}
+
+impl TomlRepository {
+    pub fn full_name(&self) -> &String {
+        &self.full_name
+    }
+    pub fn send_to(&self) -> &Option<Value> {
+        &self.send_to
+    }
+    pub fn branch_ignore(&self) -> &Option<Vec<String>> {
+        &self.branch_ignore
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct Repository {
+    //full_name: String,
+    send_to: Vec<i64>,
+    branch_ignore: Vec<String>,
+}
+
+impl Repository {
+    /*pub fn full_name(&self) -> &str {
+        &self.full_name
+    }*/
+    pub fn send_to(&self) -> &Vec<i64> {
+        &self.send_to
+    }
+    pub fn branch_ignore(&self) -> &Vec<String> {
+        &self.branch_ignore
+    }
+}
+
+impl From<&TomlRepository> for Repository {
+    fn from(repo: &TomlRepository) -> Self {
+        Self {
+            //full_name: repo.full_name().clone(),
+            send_to: match repo.send_to() {
+                None => vec![],
+                Some(v) => parse_value(v)
+            },
+            branch_ignore: match repo.branch_ignore() {
+                Some(v) => v.clone(),
+                None => vec![],
+            },
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct Telegram {
     bot_token: String,
     api_server: Option<String>,
@@ -76,23 +145,27 @@ impl Telegram {
     }
 }
 
+pub fn parse_value(value: &Value) -> Vec<i64> {
+    match value {
+        Value::String(s) => {
+            vec![i64::from_str(s.as_str()).expect("Can't parse string value to i64")]
+        }
+        Value::Integer(i) => vec![*i],
+        Value::Array(v) => v
+            .iter()
+            .map(|x| match x {
+                Value::String(s) => i64::from_str(s).expect("Can't parse array string to i64"),
+                Value::Integer(i) => *i,
+                _ => panic!("Unexpected value {:?}", x),
+            })
+            .collect(),
+        _ => panic!("Unexpected value {:?}", value),
+    }
+}
+
 impl From<&TomlTelegram> for Telegram {
     fn from(value: &TomlTelegram) -> Self {
-        let receivers: Vec<i64> = match value.send_to() {
-            Value::String(s) => {
-                vec![i64::from_str(s.as_str()).expect("Can't parse string value to i64")]
-            }
-            Value::Integer(i) => vec![*i],
-            Value::Array(v) => v
-                .iter()
-                .map(|x| match x {
-                    Value::String(s) => i64::from_str(s).expect("Can't parse array string to i64"),
-                    Value::Integer(i) => *i,
-                    _ => panic!("Unexpected value {:?}", x),
-                })
-                .collect(),
-            _ => panic!("Unexpected value {:?}", value.send_to()),
-        };
+        let receivers: Vec<i64> = parse_value(value.send_to());
         Self {
             bot_token: value.bot_token().clone(),
             api_server: value.api_server().clone(),
@@ -120,10 +193,11 @@ impl TomlTelegram {
     }
 }
 
-#[derive(Deserialize, Serialize, Debug)]
+#[derive(Debug, Clone)]
 pub struct Config {
     server: Server,
     telegram: Telegram,
+    repo_mapping: HashMap<String, Repository>,
 }
 
 impl Config {
@@ -132,6 +206,9 @@ impl Config {
     }
     pub fn telegram(&self) -> &Telegram {
         &self.telegram
+    }
+    pub fn repo_mapping(&self) -> &HashMap<String, Repository> {
+        &self.repo_mapping
     }
 }
 
@@ -147,11 +224,12 @@ impl From<&TomlConfig> for Config {
         Self {
             server: Server::from(config.server()),
             telegram: Telegram::from(config.telegram()),
+            repo_mapping: config.convert_hashmap(),
         }
     }
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize, Serialize, Clone)]
 pub struct TomlServer {
     bind: String,
     port: u16,
@@ -174,7 +252,7 @@ impl TomlServer {
     }
 }
 
-#[derive(Deserialize, Serialize, Debug)]
+#[derive(Debug, Clone)]
 pub struct Server {
     bind: String,
     secrets: String,
