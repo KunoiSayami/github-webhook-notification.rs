@@ -24,11 +24,9 @@ Then go to `./target` and you will find the executable binary file. Copy it to t
 
 ## Install From Pre-built Executable
 
-Download the latest release binary file.
+Download from the [latest release](https://github.com/KunoiSayami/github-webhook-notification.rs/releases/latest/).
 
-```sh
-sudo curl -L https://github.com/KunoiSayami/github-webhook-notification.rs/releases/latest/download/github-webhook-notification_linux_amd64 -o /usr/local/bin/github-webhook-notification_linux_amd64 
-```
+<!--sudo curl -L https://github.com/KunoiSayami/github-webhook-notification.rs/releases/latest/download/github-webhook-notification_linux_amd64 -o /usr/local/bin/github-webhook-notification_linux_amd64-->
 
 
 
