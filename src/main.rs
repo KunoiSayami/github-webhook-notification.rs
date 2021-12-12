@@ -34,6 +34,7 @@ use tokio::sync::{mpsc, Mutex};
 
 mod configure;
 mod datastructures;
+#[cfg(test)]
 mod test;
 
 const SERVER_VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -41,13 +42,6 @@ const SERVER_VERSION: &str = env!("CARGO_PKG_VERSION");
 #[derive(Debug)]
 enum Command {
     Terminate,
-    #[allow(unused)]
-    #[deprecated(
-        since = "1.2.0",
-        note = "You should use Data to direct process GitHub event, \
-        and it will remove in next release"
-    )]
-    Text(String),
     Data(Box<dyn DisplayableEvent>),
 }
 
@@ -81,16 +75,6 @@ async fn process_send_message(
     let bot = bot.parse_mode(ParseMode::Html);
     while let Some(cmd) = rx.recv().await {
         match cmd {
-            #[allow(deprecated)]
-            Command::Text(text) => {
-                for send_to in receiver.clone() {
-                    let mut payload = bot.send_message(send_to, text.clone());
-                    payload.disable_web_page_preview = Option::from(true);
-                    if let Err(e) = payload.send().await {
-                        error!("Got error in send message {:?}", e);
-                    }
-                }
-            }
             Command::Data(event) => {
                 if let Some(repository) = specify_configures.get(event.get_full_name()) {
                     if repository.branch_ignore().contains(&event.branch_name()) {
@@ -108,6 +92,14 @@ async fn process_send_message(
                             error!("Got error in send message {:?}", e);
                         }
                     }
+                } else {
+                    for send_to in receiver.clone() {
+                        let mut payload = bot.send_message(send_to, event.to_string());
+                        payload.disable_web_page_preview = Option::from(true);
+                        if let Err(e) = payload.send().await {
+                            error!("Got error in send message {:?}", e);
+                        }
+                    }
                 }
             }
             Command::Terminate => break,
@@ -115,6 +107,10 @@ async fn process_send_message(
     }
     debug!("Send message daemon exiting...");
     Ok(())
+}
+
+fn check_0(s: &str) -> bool {
+    s.chars().into_iter().all(|x| x == '0')
 }
 
 async fn route_post(
@@ -165,8 +161,7 @@ async fn route_post(
             }
             "push" => {
                 let request_body = serde_json::from_slice::<GitHubPushEvent>(&body)?;
-                if request_body.after().starts_with("000000000000")
-                    || request_body.before().starts_with("000000000000")
+                if check_0(request_body.after()) || check_0(request_body.before())
                 {
                     return Ok(HttpResponse::NoContent().finish());
                 }
