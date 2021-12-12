@@ -24,7 +24,7 @@ Then go to `target/` and you will find the executable binary file. Copy it to th
 
 ## Install From Pre-built Executable
 
-Download from the [latest release](https://github.com/KunoiSayami/github-webhook-notification.rs/releases/latest/).
+If you are unable to compile, it's OK to download from the [latest release](https://github.com/KunoiSayami/github-webhook-notification.rs/releases/latest/).
 
 <!--sudo curl -L https://github.com/KunoiSayami/github-webhook-notification.rs/releases/latest/download/github-webhook-notification_linux_amd64 -o /usr/local/bin/github-webhook-notification_linux_amd64-->
 
@@ -43,6 +43,7 @@ You can place it anywhere you like. But you must use `-c` parameter to specify t
 bind = ""
 port = 11451
 secrets = "1145141919810"
+#token = ""
 
 [telegram]
 bot_token = "1145141919:810abcdefg"
