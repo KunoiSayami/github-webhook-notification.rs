@@ -15,7 +15,7 @@
  ** along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-use crate::datastructures::{GitHubRequest, Response};
+use crate::datastructures::{GitHubPingEvent, GitHubPushEvent, Response};
 use crate::Command::Text;
 use actix_web::http::Method;
 use actix_web::web::Data;
@@ -121,18 +121,40 @@ async fn route_post(
         }
     }
 
-    let request_body = serde_json::from_slice::<GitHubRequest>(&body)?;
-    if request_body.after().starts_with("000000000000")
-        || request_body.before().starts_with("000000000000")
-    {
-        return Ok(HttpResponse::NoContent().finish());
+    if let Some(event) = request.headers().get("X-GitHub-Event") {
+        let event = event.to_str();
+        if let Err(ref e) = event {
+            error!("Parse X-GitHub-Event error: {:?}", e);
+            return Ok(HttpResponse::InternalServerError().finish())
+        }
+        let event = event.unwrap();
+        match event {
+            "ping" => {
+                let request_body = serde_json::from_slice::<GitHubPingEvent>(&body)?;
+                Ok(HttpResponse::Ok().json(Response::reason(200, request_body.zen())))
+            }
+            "push" => {
+                let request_body = serde_json::from_slice::<GitHubPushEvent>(&body)?;
+                if request_body.after().starts_with("000000000000")
+                    || request_body.before().starts_with("000000000000")
+                {
+                    return Ok(HttpResponse::NoContent().finish());
+                }
+                sender
+                    .bot_tx
+                    .send(Text(request_body.to_string()))
+                    .await
+                    .unwrap();
+                Ok(HttpResponse::Ok().json(Response::new_ok()))
+            }
+            _ => {
+                Ok(HttpResponse::BadRequest().json(Response::reason(400, format!( "Unsupported event type {:?}", event))))
+            }
+        }
+    } else {
+        error!("Unknown request: {:?}", request);
+        Ok(HttpResponse::InternalServerError().finish())
     }
-    sender
-        .bot_tx
-        .send(Text(request_body.to_string()))
-        .await
-        .unwrap();
-    Ok(HttpResponse::Ok().json(Response::new_ok()))
 }
 
 async fn async_main<P: AsRef<Path>>(path: P) -> anyhow::Result<()> {

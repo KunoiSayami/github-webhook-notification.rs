@@ -23,7 +23,19 @@ use std::fmt::Formatter;
 use std::ops::Index;
 
 #[derive(Deserialize, Serialize, Debug)]
-pub struct GitHubRequest {
+pub struct GitHubPingEvent {
+    zen: String,
+}
+
+impl GitHubPingEvent {
+    pub fn zen(&self) -> &str {
+        &self.zen
+    }
+}
+
+
+#[derive(Deserialize, Serialize, Debug)]
+pub struct GitHubPushEvent {
     #[serde(rename = "ref")]
     remote_ref: String,
     after: String,
@@ -33,7 +45,7 @@ pub struct GitHubRequest {
     repository: Repository,
 }
 
-impl GitHubRequest {
+impl GitHubPushEvent {
     pub fn remote_ref(&self) -> &str {
         &self.remote_ref
     }
@@ -54,7 +66,7 @@ impl GitHubRequest {
     }
 }
 
-impl std::fmt::Display for GitHubRequest {
+impl std::fmt::Display for GitHubPushEvent {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let branch = self.remote_ref().rsplit_once("/").unwrap().1;
         let git_ref = format!("{}:{}", self.repository(), branch);
@@ -161,11 +173,11 @@ impl Response {
         Self::new(200)
     }
 
-    pub fn reason(status: i64, reason: &str) -> Self {
+    pub fn reason<T: Into<String>>(status: i64, reason: T) -> Self {
         Self {
             version: env!("CARGO_PKG_VERSION").to_string(),
             status,
-            reason: reason.to_string(),
+            reason: reason.into(),
         }
     }
 }
