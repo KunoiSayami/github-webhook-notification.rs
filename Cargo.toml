@@ -25,3 +25,7 @@ toml = "0.5"
 opt-level = 3
 lto = true
 panic = "abort"
+
+[dev-dependencies]
+ntest = "0.7.3"
+

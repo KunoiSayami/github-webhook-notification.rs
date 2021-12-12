@@ -17,7 +17,9 @@
 
 #[cfg(test)]
 mod test {
+    use std::time::Duration;
     use crate::configure::Config;
+    use actix_web::{App, HttpServer};
 
     #[test]
     fn test_configure() {
@@ -37,5 +39,31 @@ mod test {
                 .count(),
             result.len()
         );
+    }
+
+    async fn server() -> tokio::io::Result<()> {
+        let future = HttpServer::new(move || {
+            App::new().route(
+                "/",
+                actix_web::web::to(|| actix_web::web::HttpResponse::Ok().finish()),
+            )
+        })
+            .bind("127.0.0.1:11451")
+            .unwrap()
+            .run();
+        let handler = future.handle();
+        let server = tokio::spawn(future);
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        handler.stop(false).await;
+        server.await?
+    }
+
+    #[ignore]
+    #[test]
+    #[ntest::timeout(5000)]
+    fn test_server_availability() {
+        let system = actix::System::new();
+        system.block_on(server()).unwrap();
+        system.run().unwrap();
     }
 }
