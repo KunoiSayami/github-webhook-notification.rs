@@ -107,10 +107,12 @@ Global settings regarding Telegram.
 
 - `send_to` 
 
-  is the default set of the group/channel/pm(s) you want to send your message to.
+  is the default set of the group/channel/pm(s) you want to send your message to. 
+
+  You just need to fill the "chat_id" of these chats in the bracket. 
 
   It's OK to leave it blank, but in this case you must specify the `send_to` per repository.
-
+  
   You need to fill the "chat_id" of these chats in the bracket. 
   
   As for the acquisition of "chat_id", you can search Google.
