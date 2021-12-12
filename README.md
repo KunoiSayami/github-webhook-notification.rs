@@ -119,7 +119,7 @@ Type=simple
 Restart=on-failure
 RestartSec=10s
 Environment="RUST_LOG=info"
-ExecStart=/usr/local/bin/github-webhook-notification_linux_amd64 -c /usr/local/etc/gh-wbhk-tg/config.toml
+ExecStart=/usr/local/bin/github-webhook-notification -c /usr/local/etc/gh-wbhk-tg/config.toml
 
 [Install]
 WantedBy=multi-user.target
