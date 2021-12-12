@@ -18,7 +18,7 @@ cd github-webhook-notification.rs
 cargo build --release
 ```
 
-Then go to `./target` and you will find the executable binary file. Copy it to the place you want to destinate it to.
+Then go to `target/` and you will find the executable binary file. Copy it to the place you want to destinate it to.
 
 
 
@@ -61,9 +61,17 @@ send_to = [114514, 1919810]
 
 - `secrets` 
 
-  is optional. 
+  is for client authentication.
+
+  It is highly recommended to set this to secure your service.
 
   Should correspond to the "secret" field value in your GitHub webhook settings.
+  
+- `token`
+
+  Token embedded in the URL. 
+
+  When using it, please append  `/?token=<your_token>` to your URL.
 
 - `bot_token` 
 
