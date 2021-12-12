@@ -111,11 +111,9 @@ Global settings regarding Telegram.
 
   You just need to fill the "chat_id" of these chats in the bracket. 
 
-  It's OK to leave it blank, but in this case you must specify the `send_to` per repository.
+  It's OK to leave it blank, but in this case you must specify the `send_to` per repository. 
   
-  You need to fill the "chat_id" of these chats in the bracket. 
-  
-  As for the acquisition of "chat_id", you can search Google.
+  As for the acquisition of "chat_id", you can search Google. 
 
 `[[repository]]`
 
