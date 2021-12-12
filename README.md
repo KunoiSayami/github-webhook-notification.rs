@@ -8,7 +8,7 @@ A simple webhook server that helps you forward GitHub webhook messages to Telegr
 
 It consumes around 1.2GiB of RAM at maximum, together with a disk usage of 2GiB. 
 
-**Please make sure you have abundant resources.**
+**Please make sure you have abundant resources before compiling.**
 
 And you need an available rust compiler, `rustup`, for instance.
 
@@ -18,15 +18,19 @@ cd github-webhook-notification.rs
 cargo build --release
 ```
 
-Then go to `target/` and you will find the executable binary file. Copy it to the place you want to destinate it to.
+Then go to `target/` and you will find the executable binary file. Copy it to the place you want to destinate it to. 
+
+A typical location is `/usr/bin` for most Linux distributions.
 
 
 
 ## Install From Pre-built Executable
 
-If you are unable to compile, it's OK to download from the [latest release](https://github.com/KunoiSayami/github-webhook-notification.rs/releases/latest/).
+If you are unable to compile, it's OK to download pre-built binary file from the [release page](https://github.com/KunoiSayami/github-webhook-notification.rs/releases/).
 
-<!--sudo curl -L https://github.com/KunoiSayami/github-webhook-notification.rs/releases/latest/download/github-webhook-notification_linux_amd64 -o /usr/local/bin/github-webhook-notification_linux_amd64-->
+Remember to make it executable.
+
+<!--sudo curl -L https://github.com/KunoiSayami/github-webhook-notification.rs/releases/latest/download/github-webhook-notification_linux_amd64 -o /usr/bin/github-webhook-notification-->
 
 
 
@@ -38,21 +42,36 @@ You can place it anywhere you like. But you must use `-c` parameter to specify t
 
 ```toml
 # ./data/config.toml
-# /usr/local/etc/gh-wbhk-tg/config.toml
+# /etc/ksutils/webhook/config.toml
 [server]
-bind = ""
+bind = "127.0.0.1"
 port = 11451
 secrets = "1145141919810"
-#token = ""
+#token = "henghengaaaaaaa"
 
 [telegram]
 bot_token = "1145141919:810abcdefg"
 send_to = [114514, 1919810]
+
+[[repository]]
+full_name = "MonsterSenpai/SummerNight-HornyFantasy"
+send_to = [11, 4, 514, 1919, 81, 0]
+
+[[repository]]
+full_name = "BillyKing/Wrestling"
+send_to = 233
+branch_ignore = ["test", "2323"]
 ```
+
+`[server]`
+
+Settings for the server.
 
 - `bind` 
 
-  is the address you want this server to listen.
+  is the address you want this server to listen. 
+
+  It's best to listen localhost.
 
 - `port` 
 
@@ -64,9 +83,9 @@ send_to = [114514, 1919810]
 
   is for client authentication.
 
-  It is highly recommended to set this to secure your service.
+  It is **highly recommended** to set this to secure your service.
 
-  Should correspond to the "secret" field value in your GitHub webhook settings.
+  It should match the "secret" field value in your GitHub webhook settings.
   
 - `token`
 
@@ -74,23 +93,47 @@ send_to = [114514, 1919810]
 
   When using it, please append  `/?token=<your_token>` to your URL.
 
+`[telegram]`
+
+Global settings regarding Telegram.
+
 - `bot_token` 
 
   is the bot token of your Telegram bot. 
 
   You can find it in  [Telegram@Botfather](https://t.me/botfather). 
 
-  If you don't have a bot token, you can turn to it to create a new bot, too.
+  If you don't have a bot token, you can turn to it to create a new bot.
 
 - `send_to` 
 
-  is the set of the group/channel/pm(s) you want to send your message to. 
+  is the default set of the group/channel/pm(s) you want to send your message to.
+
+  It's OK to leave it blank, but in this case you must specify the `send_to` per repository.
 
   You need to fill the "chat_id" of these chats in the bracket. 
-
+  
   As for the acquisition of "chat_id", you can search Google.
 
+`[[repository]]`
 
+Individual settings for each repository.
+
+- `full_name`
+
+  is the path of the repository, formatted in `owner/repository_name`.
+
+- `send_to`
+
+  specifies the (list of) chat_id(s), to which you want to send messages from this `owner/repo`. 
+
+  If left blank, messages will be sent to all chats listed in `telegram.send_to`.
+
+- `branch_ignore` 
+
+  is the branch(es) that you want to ignore. 
+  
+  Events from this/these branch(es) will not be sent.
 
 This usage will be mentioned below.
 
@@ -110,6 +153,7 @@ Take this for an example.
 
 ```ini
 # /etc/systemd/system/gh-wbhk-tg.service
+
 [Unit]
 Description=github-webhook-telegram
 Wants=network.target 
@@ -120,7 +164,7 @@ Type=simple
 Restart=on-failure
 RestartSec=10s
 Environment="RUST_LOG=info"
-ExecStart=/usr/local/bin/github-webhook-notification -c /usr/local/etc/gh-wbhk-tg/config.toml
+ExecStart=/usr/bin/github-webhook-notification -c /etc/ksutils/webhook/config.toml
 
 [Install]
 WantedBy=multi-user.target
