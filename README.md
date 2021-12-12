@@ -48,7 +48,7 @@ secrets = "1145141919810"
 
 [telegram]
 bot_token = "1145141919:810abcdefg"
-send_to = [114514, "1919810"]
+send_to = [114514, 1919810]
 ```
 
 - `bind` 
@@ -71,7 +71,7 @@ send_to = [114514, "1919810"]
 
   is the bot token of your Telegram bot. 
 
-  You can find it in  Telegram@Botfather. 
+  You can find it in  [Telegram@Botfather](https://t.me/botfather). 
 
   If you don't have a bot token, you can turn to it to create a new bot, too.
 
@@ -89,12 +89,12 @@ This usage will be mentioned below.
 
 ## Deploy
 
-Type `github-webhook-notification_linux_amd64 --help` to get more usages.
+Type `github-webhook-notification --help` to get more usages.
 
 It's OK to simply run it. For example:
 
 ```sh
-github-webhook-notification_linux_amd64 -c data/config.toml
+github-webhook-notification -c data/config.toml
 ```
 
 But it's better to set up a service.
