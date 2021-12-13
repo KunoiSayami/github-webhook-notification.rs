@@ -19,8 +19,7 @@
 #[cfg(test)]
 mod test {
     use crate::configure::Config;
-    use actix_web::{App, HttpServer};
-    use std::time::Duration;
+    use crate::{DisplayableEvent, GitHubPingEvent, GitHubPushEvent};
 
     #[test]
     fn test_configure() {
@@ -55,29 +54,36 @@ mod test {
         assert_eq!(r2.branch_ignore().len(), 2);
     }
 
-    async fn server() -> tokio::io::Result<()> {
-        let future = HttpServer::new(move || {
-            App::new().route(
-                "/",
-                actix_web::web::to(|| actix_web::web::HttpResponse::Ok().finish()),
-            )
-        })
-        .bind("127.0.0.1:11451")
-        .unwrap()
-        .run();
-        let handler = future.handle();
-        let server = tokio::spawn(future);
-        tokio::time::sleep(Duration::from_secs(1)).await;
-        handler.stop(false).await;
-        server.await?
+    // src: https://docs.rs/actix-web/4.0.0-beta.14/actix_web/test/struct.TestRequest.html
+    #[actix_web::test]
+    async fn test_init_service() {
+        use actix_web::dev::Service;
+        let app = actix_web::test::init_service(
+            actix_web::App::new()
+                .service(actix_web::web::resource("/test").to(|| async { "OK" }))
+        ).await;
+
+        // Create request object
+        let req = actix_web::test::TestRequest::with_uri("/test").to_request();
+
+        // Execute application
+        let resp = app.call(req).await.unwrap();
+        assert_eq!(resp.status(), actix_web::http::StatusCode::OK);
     }
 
-    #[ignore]
+
     #[test]
-    #[ntest::timeout(5000)]
-    fn test_server_availability() {
-        let system = actix::System::new();
-        system.block_on(server()).unwrap();
-        system.run().unwrap();
+    fn test_parse_ping() {
+        let s = std::fs::read_to_string("example/ping.json").unwrap();
+        let event: GitHubPingEvent = serde_json::from_str(s.as_str()).unwrap();
+        assert_eq!(event.zen(), "Half measures are as bad as nothing at all.");
+    }
+
+    #[test]
+    fn test_parse_push() {
+        let s = std::fs::read_to_string("example/push.json").unwrap();
+        let event: GitHubPushEvent = serde_json::from_str(s.as_str()).unwrap();
+        assert_eq!(event.repository().full_name(), "MagomeYae/test-action");
+        assert_eq!(event.branch_name(), "master");
     }
 }

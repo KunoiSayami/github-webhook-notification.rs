@@ -1,4 +1,4 @@
-# GitHub webhook notifications 
+# GitHub webhook notifications
 
 A simple webhook server that helps you forward GitHub webhook messages to Telegram.
 
@@ -6,7 +6,7 @@ A simple webhook server that helps you forward GitHub webhook messages to Telegr
 
 ## Compile
 
-It consumes around 1.2GiB of RAM at maximum, together with a disk usage of 2GiB. 
+It consumes around 1.2GiB of RAM at maximum, together with a disk usage of 2GiB.
 
 **Please make sure you have abundant resources before compiling.**
 
@@ -18,7 +18,7 @@ cd github-webhook-notification.rs
 cargo build --release
 ```
 
-Then go to `target/` and you will find the executable binary file. Copy it to the place you want to destinate it to. 
+Then go to `target/` and you will find the executable binary file. Copy it to the place you want to destinate it to.
 
 A typical location is `/usr/bin` for most Linux distributions.
 
@@ -36,9 +36,9 @@ Remember to make it executable.
 
 ## Configuration
 
-It looks like this. 
+It looks like this.
 
-You can place it anywhere you like. But you must use `-c` parameter to specify the path of your configuration file. 
+You can place it anywhere you like. But you must use `-c` parameter to specify the path of your configuration file.
 
 ```toml
 # ./data/config.toml
@@ -67,29 +67,29 @@ branch_ignore = ["test", "2323"]
 
 Settings for the server.
 
-- `bind` 
+- `bind`
 
-  is the address you want this server to listen. 
+  is the address you want this server to listen.
 
   It's best to listen localhost.
 
-- `port` 
+- `port`
 
-  is the listening port. 
+  is the listening port.
 
-  Set any available value for your server as you like. 
+  Set any available value for your server as you like.
 
-- `secrets` 
+- `secrets`
 
   is for client authentication.
 
   It is **highly recommended** to set this to secure your service.
 
   It should match the "secret" field value in your GitHub webhook settings.
-  
+
 - `token`
 
-  Token embedded in the URL. 
+  Token embedded in the URL.
 
   When using it, please append  `/?token=<your_token>` to your URL.
 
@@ -97,23 +97,23 @@ Settings for the server.
 
 Global settings regarding Telegram.
 
-- `bot_token` 
+- `bot_token`
 
-  is the bot token of your Telegram bot. 
+  is the bot token of your Telegram bot.
 
-  You can find it in  [Telegram@Botfather](https://t.me/botfather). 
+  You can find it in  [Telegram@Botfather](https://t.me/botfather).
 
   If you don't have a bot token, you can turn to it to create a new bot.
 
-- `send_to` 
+- `send_to`
 
-  is the default set of the group/channel/pm(s) you want to send your message to. 
+  is the default set of the group/channel/pm(s) you want to send your message to.
 
-  You just need to fill the "chat_id" of these chats in the bracket. 
+  You just need to fill the "chat_id" of these chats in the bracket.
 
-  It's OK to leave it blank, but in this case you must specify the `send_to` per repository. 
-  
-  As for the acquisition of "chat_id", you can search Google. 
+  It's OK to leave it blank, but in this case you must specify the `send_to` per repository.
+
+  As for the acquisition of "chat_id", you can search Google.
 
 `[[repository]]`
 
@@ -125,14 +125,14 @@ Individual settings for each repository.
 
 - `send_to`
 
-  specifies the (list of) chat_id(s), to which you want to send messages from this `owner/repo`. 
+  specifies the (list of) chat_id(s), to which you want to send messages from this `owner/repo`.
 
   If left blank, messages will be sent to all chats listed in `telegram.send_to`.
 
-- `branch_ignore` 
+- `branch_ignore`
 
-  is the branch(es) that you want to ignore. 
-  
+  is the branch(es) that you want to ignore.
+
   Events from this/these branch(es) will not be sent.
 
 This usage will be mentioned below.
@@ -156,8 +156,8 @@ Take this for an example.
 
 [Unit]
 Description=github-webhook-telegram
-Wants=network.target 
-After=network.target 
+Wants=network.target
+After=network.target
 
 [Service]
 Type=simple
@@ -171,7 +171,7 @@ WantedBy=multi-user.target
 
 ```
 
-It's better to launch it after the web server starts to work. 
+It's better to launch it after the web server starts to work.
 
 You can customize the `Execstart` command as you like.
 
