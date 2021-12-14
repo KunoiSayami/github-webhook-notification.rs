@@ -15,7 +15,7 @@
  ** along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-use crate::configure::Repository;
+use crate::configure::{Config, Repository};
 use crate::datastructures::{DisplayableEvent, GitHubPingEvent, GitHubPushEvent, Response};
 use actix_web::http::Method;
 use actix_web::web::Data;
@@ -42,11 +42,12 @@ const SERVER_VERSION: &str = env!("CARGO_PKG_VERSION");
 #[derive(Debug)]
 enum Command {
     Terminate,
+    #[deprecated(since = "2.1.0", note = "You should use Bundle instead send GitHub Data directly, this field will removed in next version.")]
     Data(Box<dyn DisplayableEvent>),
+    Bundle((Vec<i64>, String)),
 }
 
 struct ExtraData {
-    secrets: String,
     bot_tx: mpsc::Sender<Command>,
 }
 
@@ -102,7 +103,17 @@ async fn process_send_message(
                     }
                 }
             }
+            Command::Bundle((receiver, text)) => {
+                for send_to in receiver {
+                    let mut payload = bot.send_message(send_to, &text);
+                    payload.disable_web_page_preview = Option::from(true);
+                    if let Err(e) = payload.send().await {
+                        error!("Got error in send message {:?}", e);
+                    }
+                }
+            },
             Command::Terminate => break,
+
         }
     }
     debug!("Send message daemon exiting...");
@@ -116,6 +127,7 @@ fn check_0(s: &str) -> bool {
 async fn route_post(
     request: HttpRequest,
     mut payload: web::Payload,
+    configure: web::Data<Config>,
     data: web::Data<Arc<Mutex<ExtraData>>>,
 ) -> actix_web::Result<HttpResponse> {
     let mut body = web::BytesMut::new();
@@ -130,9 +142,10 @@ async fn route_post(
     }
 
     let sender = data.lock().await;
-    if !sender.secrets.is_empty() {
+    let secrets =configure.server().secrets();
+    if !secrets.is_empty() {
         type HmacSha256 = Hmac<Sha256>;
-        let mut h = HmacSha256::new_from_slice(sender.secrets.as_bytes()).unwrap();
+        let mut h = HmacSha256::new_from_slice(secrets.as_bytes()).unwrap();
         h.update(&*body);
         let result = h.finalize();
         let sha256val = format!("sha256={:x}", result.into_bytes()).to_lowercase();
@@ -192,7 +205,6 @@ async fn async_main<P: AsRef<Path>>(path: P) -> anyhow::Result<()> {
         crate::datastructures::AuthorizationGuard::from(config.server().token());
 
     let extra_data = Arc::new(Mutex::new(ExtraData {
-        secrets: config.server().secrets().clone(),
         bot_tx: bot_tx.clone(),
     }));
     let msg_sender = tokio::spawn(process_send_message(
@@ -203,7 +215,8 @@ async fn async_main<P: AsRef<Path>>(path: P) -> anyhow::Result<()> {
         bot_rx,
     ));
 
-    info!("Bind address: {}", config.server().bind());
+    let bind = config.server().bind().clone();
+    info!("Bind address: {}", bind);
 
     let server = tokio::spawn(
         HttpServer::new(move || {
@@ -212,6 +225,7 @@ async fn async_main<P: AsRef<Path>>(path: P) -> anyhow::Result<()> {
                 .service(
                     web::scope("/")
                         .guard(authorization_guard.to_owned())
+                        .app_data(Data::new(config.clone()))
                         .app_data(Data::new(extra_data.clone()))
                         .route("", web::method(Method::POST).to(route_post)),
                 )
@@ -221,7 +235,7 @@ async fn async_main<P: AsRef<Path>>(path: P) -> anyhow::Result<()> {
                 ))
                 .route("/", web::to(HttpResponse::Forbidden))
         })
-        .bind(config.server().bind())?
+        .bind(bind)?
         .run(),
     );
 
