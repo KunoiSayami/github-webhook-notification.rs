@@ -15,15 +15,16 @@
  ** along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-use crate::configure::{Config, Repository};
-use crate::datastructures::{DisplayableEvent, GitHubPingEvent, GitHubPushEvent, Response};
+use crate::configure::Config;
+use crate::datastructures::{
+    CommandBundle, DisplayableEvent, GitHubEarlyParse, GitHubPingEvent, GitHubPushEvent, Response,
+};
 use actix_web::http::Method;
 use actix_web::web::Data;
 use actix_web::{web, App, HttpRequest, HttpResponse, HttpServer};
 use hmac::{Hmac, Mac};
 use log::{debug, error, info, warn};
 use sha2::Sha256;
-use std::collections::HashMap;
 use std::fmt::Debug;
 use std::path::Path;
 use std::sync::Arc;
@@ -42,9 +43,7 @@ const SERVER_VERSION: &str = env!("CARGO_PKG_VERSION");
 #[derive(Debug)]
 enum Command {
     Terminate,
-    #[deprecated(since = "2.1.0", note = "You should use Bundle instead send GitHub Data directly, this field will removed in next version.")]
-    Data(Box<dyn DisplayableEvent>),
-    Bundle((Vec<i64>, String)),
+    Bundle(CommandBundle),
 }
 
 struct ExtraData {
@@ -54,8 +53,6 @@ struct ExtraData {
 async fn process_send_message(
     bot_token: String,
     api_server: Option<String>,
-    receiver: Vec<i64>,
-    specify_configures: HashMap<String, Repository>,
     mut rx: mpsc::Receiver<Command>,
 ) -> anyhow::Result<()> {
     if bot_token.is_empty() {
@@ -76,44 +73,16 @@ async fn process_send_message(
     let bot = bot.parse_mode(ParseMode::Html);
     while let Some(cmd) = rx.recv().await {
         match cmd {
-            Command::Data(event) => {
-                if let Some(repository) = specify_configures.get(event.get_full_name()) {
-                    if repository.branch_ignore().contains(&event.branch_name()) {
-                        continue;
-                    }
-                    let target = if repository.send_to().is_empty() {
-                        receiver.clone()
-                    } else {
-                        repository.send_to().clone()
-                    };
-                    for send_to in target {
-                        let mut payload = bot.send_message(send_to, event.to_string());
-                        payload.disable_web_page_preview = Option::from(true);
-                        if let Err(e) = payload.send().await {
-                            error!("Got error in send message {:?}", e);
-                        }
-                    }
-                } else {
-                    for send_to in receiver.clone() {
-                        let mut payload = bot.send_message(send_to, event.to_string());
-                        payload.disable_web_page_preview = Option::from(true);
-                        if let Err(e) = payload.send().await {
-                            error!("Got error in send message {:?}", e);
-                        }
-                    }
-                }
-            }
-            Command::Bundle((receiver, text)) => {
-                for send_to in receiver {
-                    let mut payload = bot.send_message(send_to, &text);
+            Command::Bundle(bundle) => {
+                for send_to in bundle.receiver() {
+                    let mut payload = bot.send_message(*send_to, bundle.text());
                     payload.disable_web_page_preview = Option::from(true);
                     if let Err(e) = payload.send().await {
                         error!("Got error in send message {:?}", e);
                     }
                 }
-            },
+            }
             Command::Terminate => break,
-
         }
     }
     debug!("Send message daemon exiting...");
@@ -141,8 +110,20 @@ async fn route_post(
         body.extend_from_slice(&chunk);
     }
 
+    let body = body;
+
     let sender = data.lock().await;
-    let secrets =configure.server().secrets();
+    let object = serde_json::from_slice::<GitHubEarlyParse>(&body);
+    if let Err(ref e) = object {
+        error!("Get parser error in pre-check stage: {:?}", &e);
+        error!("Raw data => {:?}", &body);
+        return Ok(HttpResponse::InternalServerError().finish());
+    };
+    let object = object?;
+    let settings = configure
+        .fetch_repository_configure(object.get_full_name());
+
+    let secrets = settings.secrets();
     if !secrets.is_empty() {
         type HmacSha256 = Hmac<Sha256>;
         let mut h = HmacSha256::new_from_slice(secrets.as_bytes()).unwrap();
@@ -160,39 +141,45 @@ async fn route_post(
         }
     }
 
-    if let Some(event) = request.headers().get("X-GitHub-Event") {
-        let event = event.to_str();
-        if let Err(ref e) = event {
-            error!("Parse X-GitHub-Event error: {:?}", e);
-            return Ok(HttpResponse::InternalServerError().finish());
+    let event_header = request.headers().get("X-GitHub-Event");
+    if event_header.is_none() {
+        error!("Unknown request: {:?}", request);
+        return Ok(HttpResponse::InternalServerError().finish());
+    }
+    let event_header = event_header.unwrap().to_str();
+    if let Err(ref e) = event_header {
+        error!("Parse X-GitHub-Event error: {:?}", e);
+        return Ok(HttpResponse::InternalServerError().finish());
+    }
+    let event_header = event_header.unwrap();
+    match event_header {
+        "ping" => {
+            let request_body = serde_json::from_slice::<GitHubPingEvent>(&body)?;
+            Ok(HttpResponse::Ok().json(Response::reason(200, request_body.zen())))
         }
-        let event = event.unwrap();
-        match event {
-            "ping" => {
-                let request_body = serde_json::from_slice::<GitHubPingEvent>(&body)?;
-                Ok(HttpResponse::Ok().json(Response::reason(200, request_body.zen())))
+        "push" => {
+            let event = serde_json::from_slice::<GitHubPushEvent>(&body)?;
+            if check_0(event.after()) || check_0(event.before()) {
+                return Ok(HttpResponse::NoContent().finish());
             }
-            "push" => {
-                let request_body = serde_json::from_slice::<GitHubPushEvent>(&body)?;
-                if check_0(request_body.after()) || check_0(request_body.before())
-                {
-                    return Ok(HttpResponse::NoContent().finish());
-                }
+            if settings.branch_ignore().contains(&event.branch_name()) {
+                Ok(HttpResponse::Ok().json(Response::reason(204, "Skipped.")))
+            } else {
                 sender
                     .bot_tx
-                    .send(Command::Data(Box::new(request_body)))
+                    .send(Command::Bundle(CommandBundle::new(
+                        settings.send_to().clone(),
+                        event.to_string(),
+                    )))
                     .await
                     .unwrap();
                 Ok(HttpResponse::Ok().json(Response::new_ok()))
             }
-            _ => Ok(HttpResponse::BadRequest().json(Response::reason(
-                400,
-                format!("Unsupported event type {:?}", event),
-            ))),
         }
-    } else {
-        error!("Unknown request: {:?}", request);
-        Ok(HttpResponse::InternalServerError().finish())
+        _ => Ok(HttpResponse::BadRequest().json(Response::reason(
+            400,
+            format!("Unsupported event type {:?}", event_header),
+        ))),
     }
 }
 
@@ -210,8 +197,6 @@ async fn async_main<P: AsRef<Path>>(path: P) -> anyhow::Result<()> {
     let msg_sender = tokio::spawn(process_send_message(
         config.telegram().bot_token().to_string(),
         config.telegram().api_server().clone(),
-        config.telegram().send_to().clone(),
-        config.repo_mapping().clone(),
         bot_rx,
     ));
 

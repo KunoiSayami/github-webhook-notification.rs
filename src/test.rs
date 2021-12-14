@@ -22,9 +22,10 @@ mod test {
     use crate::{DisplayableEvent, GitHubPingEvent, GitHubPushEvent};
 
     #[test]
+    #[should_panic] // Will, just a joke
     fn test_configure() {
         let cfg = Config::new("example/sample.toml").unwrap();
-        assert_eq!(cfg.server().bind(), "0.0.0.0:11451");
+        assert_eq!(cfg.server().bind(), "127.0.0.1:11451");
         assert_eq!(cfg.server().secrets(), "1145141919810");
         assert!(cfg.server().token().is_empty());
         assert_eq!(cfg.telegram().bot_token(), "1145141919:810abcdefg");
@@ -40,18 +41,23 @@ mod test {
             result.len()
         );
         let repositories = cfg.repo_mapping();
-        assert_eq!(repositories.len(), 2);
-        let r1 = repositories.get("114514/1919810");
+        assert_eq!(repositories.len(), 3);
+        let r1 = repositories.get("MonsterSenpai/SummerNight-HornyFantasy");
         assert!(r1.is_some());
         let r1 = r1.unwrap();
         assert!(r1.branch_ignore().is_empty());
         assert!(!r1.send_to().is_empty());
         assert_eq!(r1.send_to().len(), 6);
-        let r2 = repositories.get("2147483647/114514");
+        let r2 = repositories.get("BillyKing/Wrestling");
         assert!(r2.is_some());
         let r2 = r2.unwrap();
         assert_eq!(r2.send_to().len(), 1);
         assert_eq!(r2.branch_ignore().len(), 2);
+        assert_eq!(r2.secrets(), cfg.server().secrets());
+        let r_missing = cfg.fetch_repository_configure("114514/1919810");
+        assert_eq!(r_missing.secrets(), cfg.server().secrets());
+        assert!(r_missing.branch_ignore().is_empty());
+        assert_eq!(r_missing.send_to(), cfg.telegram().send_to());
     }
 
     // src: https://docs.rs/actix-web/4.0.0-beta.14/actix_web/test/struct.TestRequest.html
@@ -59,9 +65,9 @@ mod test {
     async fn test_init_service() {
         use actix_web::dev::Service;
         let app = actix_web::test::init_service(
-            actix_web::App::new()
-                .service(actix_web::web::resource("/test").to(|| async { "OK" }))
-        ).await;
+            actix_web::App::new().service(actix_web::web::resource("/test").to(|| async { "OK" })),
+        )
+        .await;
 
         // Create request object
         let req = actix_web::test::TestRequest::with_uri("/test").to_request();
@@ -70,7 +76,6 @@ mod test {
         let resp = app.call(req).await.unwrap();
         assert_eq!(resp.status(), actix_web::http::StatusCode::OK);
     }
-
 
     #[test]
     fn test_parse_ping() {

@@ -77,6 +77,7 @@ pub struct TomlRepository {
     full_name: String,
     send_to: Option<Value>,
     branch_ignore: Option<Vec<String>>,
+    secrets: Option<String>,
 }
 
 impl TomlRepository {
@@ -89,6 +90,9 @@ impl TomlRepository {
     pub fn branch_ignore(&self) -> &Option<Vec<String>> {
         &self.branch_ignore
     }
+    pub fn secrets(&self) -> &Option<String> {
+        &self.secrets
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -96,6 +100,7 @@ pub struct Repository {
     //full_name: String,
     send_to: Vec<i64>,
     branch_ignore: Vec<String>,
+    secrets: String,
 }
 
 impl Repository {
@@ -108,6 +113,9 @@ impl Repository {
     pub fn branch_ignore(&self) -> &Vec<String> {
         &self.branch_ignore
     }
+    pub fn secrets(&self) -> &String {
+        &self.secrets
+    }
 }
 
 impl From<&TomlRepository> for Repository {
@@ -116,15 +124,63 @@ impl From<&TomlRepository> for Repository {
             //full_name: repo.full_name().clone(),
             send_to: match repo.send_to() {
                 None => vec![],
-                Some(v) => parse_value(v)
+                Some(v) => parse_value(v),
             },
             branch_ignore: match repo.branch_ignore() {
                 Some(v) => v.clone(),
                 None => vec![],
             },
+            secrets: match repo.secrets() {
+                None => "".to_string(),
+                Some(ref secret) => secret.clone(),
+            },
         }
     }
 }
+
+/*impl From<&Config> for Repository {
+    fn from(s: &Config) -> Self {
+        Self {
+            send_to: s.telegram().send_to().clone(),
+            secrets: Some(s.server().secrets().clone()),
+            ..Default::default()
+        }
+    }
+}*/
+
+#[derive(Debug, Default, Clone)]
+pub struct RepositoryBuilder {
+    send_to: Vec<i64>,
+    branch_ignore: Vec<String>,
+    secrets: String,
+}
+
+impl RepositoryBuilder {
+    pub fn set_send_to(&mut self, send_to: Vec<i64>) -> &mut Self {
+        self.send_to = send_to;
+        self
+    }
+    #[allow(unused)]
+    pub fn set_branch_ignore(&mut self, branch_ignore: Vec<String>) -> &mut Self {
+        self.branch_ignore = branch_ignore;
+        self
+    }
+    pub fn set_secrets(&mut self, secrets: &String) -> &mut Self{
+        self.secrets = secrets.clone();
+        self
+    }
+    pub fn build(&self) -> Repository {
+        Repository {
+            send_to: self.send_to.clone(),
+            branch_ignore: self.branch_ignore.clone(),
+            secrets: self.secrets.clone(),
+        }
+    }
+    pub fn new() -> Self {
+        Self { ..Default::default() }
+    }
+}
+
 
 #[derive(Debug, Clone)]
 pub struct Telegram {
@@ -216,6 +272,19 @@ impl Config {
     pub fn new<P: AsRef<Path>>(path: P) -> anyhow::Result<Config> {
         let config = TomlConfig::new(path)?;
         Ok(Self::from(&config))
+    }
+
+    pub fn fetch_repository_configure(&self, branch_name: &str) -> Repository {
+        let conf = self.repo_mapping().get(branch_name);
+        match conf {
+            None => {
+                RepositoryBuilder::new()
+                    .set_send_to(self.telegram().send_to().clone())
+                    .set_secrets(self.server().secrets())
+                    .build()
+            }
+            Some(repository) => repository.clone()
+        }
     }
 }
 

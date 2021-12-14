@@ -1,18 +1,22 @@
 [server]
-bind = "0.0.0.0"
+bind = "127.0.0.1"
 port = 11451
 secrets = "1145141919810"
-#token = ""
+#token = "henghengaaaaaaa"
 
 [telegram]
 bot_token = "1145141919:810abcdefg"
-send_to = [114514, "1919810"]
+send_to = [114514, 1919810]
 
 [[repository]]
-full_name = "114514/1919810"
-send_to = [1, 4, 5, 9, 8, 0]
+full_name = "MonsterSenpai/SummerNight-HornyFantasy"
+send_to = [11, 4, 514, 1919, 81, 0]
 
 [[repository]]
-full_name = "2147483647/114514"
+full_name = "BillyKing/Wrestling"
 send_to = 233
 branch_ignore = ["test", "2323"]
+
+[[repository]]
+full_name = "sample/test"
+secrets = "2333"

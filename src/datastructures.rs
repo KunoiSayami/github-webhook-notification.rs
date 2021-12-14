@@ -41,6 +41,21 @@ where
 }
 
 #[derive(Deserialize, Serialize, Debug)]
+pub struct GitHubEarlyParse {
+    repository: Repository,
+}
+
+impl GitHubEarlyParse {
+    pub fn repository(&self) -> &Repository {
+        &self.repository
+    }
+
+    pub fn get_full_name(&self) -> &String {
+        self.repository().full_name()
+    }
+}
+
+#[derive(Deserialize, Serialize, Debug)]
 pub struct GitHubPingEvent {
     zen: String,
 }
@@ -275,5 +290,23 @@ impl Guard for AuthorizationGuard {
             }
         }
         false
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct CommandBundle {
+    receiver: Vec<i64>,
+    text: String,
+}
+
+impl CommandBundle {
+    pub fn new(receiver: Vec<i64>, text: String) -> Self {
+        Self { receiver, text }
+    }
+    pub fn receiver(&self) -> &Vec<i64> {
+        &self.receiver
+    }
+    pub fn text(&self) -> &str {
+        &self.text
     }
 }
