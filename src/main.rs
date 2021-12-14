@@ -120,8 +120,7 @@ async fn route_post(
         return Ok(HttpResponse::InternalServerError().finish());
     };
     let object = object?;
-    let settings = configure
-        .fetch_repository_configure(object.get_full_name());
+    let settings = configure.fetch_repository_configure(object.get_full_name());
 
     let secrets = settings.secrets();
     if !secrets.is_empty() {

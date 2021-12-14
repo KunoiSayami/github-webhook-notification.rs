@@ -60,127 +60,30 @@ impl TomlConfig {
     pub fn repository(&self) -> &Option<Vec<TomlRepository>> {
         &self.repository
     }
-
-    pub fn convert_hashmap(&self) -> HashMap<String, Repository> {
-        let mut m = HashMap::new();
-        if let Some(repositories) = &self.repository() {
-            for repository in repositories {
-                m.insert(repository.full_name().clone(), Repository::from(repository));
-            }
-        }
-        m
-    }
 }
 
-#[derive(Deserialize, Serialize, Debug, Clone)]
-pub struct TomlRepository {
-    full_name: String,
-    send_to: Option<Value>,
-    branch_ignore: Option<Vec<String>>,
+#[derive(Deserialize, Serialize, Clone)]
+pub struct TomlServer {
+    bind: String,
+    port: u16,
     secrets: Option<String>,
+    token: Option<String>,
 }
 
-impl TomlRepository {
-    pub fn full_name(&self) -> &String {
-        &self.full_name
+impl TomlServer {
+    pub fn bind(&self) -> &str {
+        &self.bind
     }
-    pub fn send_to(&self) -> &Option<Value> {
-        &self.send_to
-    }
-    pub fn branch_ignore(&self) -> &Option<Vec<String>> {
-        &self.branch_ignore
+    pub fn port(&self) -> u16 {
+        self.port
     }
     pub fn secrets(&self) -> &Option<String> {
         &self.secrets
     }
-}
-
-#[derive(Debug, Clone)]
-pub struct Repository {
-    //full_name: String,
-    send_to: Vec<i64>,
-    branch_ignore: Vec<String>,
-    secrets: String,
-}
-
-impl Repository {
-    /*pub fn full_name(&self) -> &str {
-        &self.full_name
-    }*/
-    pub fn send_to(&self) -> &Vec<i64> {
-        &self.send_to
-    }
-    pub fn branch_ignore(&self) -> &Vec<String> {
-        &self.branch_ignore
-    }
-    pub fn secrets(&self) -> &String {
-        &self.secrets
+    pub fn token(&self) -> &Option<String> {
+        &self.token
     }
 }
-
-impl From<&TomlRepository> for Repository {
-    fn from(repo: &TomlRepository) -> Self {
-        Self {
-            //full_name: repo.full_name().clone(),
-            send_to: match repo.send_to() {
-                None => vec![],
-                Some(v) => parse_value(v),
-            },
-            branch_ignore: match repo.branch_ignore() {
-                Some(v) => v.clone(),
-                None => vec![],
-            },
-            secrets: match repo.secrets() {
-                None => "".to_string(),
-                Some(ref secret) => secret.clone(),
-            },
-        }
-    }
-}
-
-/*impl From<&Config> for Repository {
-    fn from(s: &Config) -> Self {
-        Self {
-            send_to: s.telegram().send_to().clone(),
-            secrets: Some(s.server().secrets().clone()),
-            ..Default::default()
-        }
-    }
-}*/
-
-#[derive(Debug, Default, Clone)]
-pub struct RepositoryBuilder {
-    send_to: Vec<i64>,
-    branch_ignore: Vec<String>,
-    secrets: String,
-}
-
-impl RepositoryBuilder {
-    pub fn set_send_to(&mut self, send_to: Vec<i64>) -> &mut Self {
-        self.send_to = send_to;
-        self
-    }
-    #[allow(unused)]
-    pub fn set_branch_ignore(&mut self, branch_ignore: Vec<String>) -> &mut Self {
-        self.branch_ignore = branch_ignore;
-        self
-    }
-    pub fn set_secrets(&mut self, secrets: &String) -> &mut Self{
-        self.secrets = secrets.clone();
-        self
-    }
-    pub fn build(&self) -> Repository {
-        Repository {
-            send_to: self.send_to.clone(),
-            branch_ignore: self.branch_ignore.clone(),
-            secrets: self.secrets.clone(),
-        }
-    }
-    pub fn new() -> Self {
-        Self { ..Default::default() }
-    }
-}
-
 
 #[derive(Debug, Clone)]
 pub struct Telegram {
@@ -263,61 +166,82 @@ impl Config {
     pub fn telegram(&self) -> &Telegram {
         &self.telegram
     }
+
+    #[allow(dead_code)]
+    #[deprecated(
+        note = "Avoid access from repository directly, use `Self::fetch_repository_configure` function instead."
+    )]
     pub fn repo_mapping(&self) -> &HashMap<String, Repository> {
+        self.mapping()
+    }
+
+    fn mapping(&self) -> &HashMap<String, Repository> {
         &self.repo_mapping
     }
-}
 
-impl Config {
     pub fn new<P: AsRef<Path>>(path: P) -> anyhow::Result<Config> {
         let config = TomlConfig::new(path)?;
         Ok(Self::from(&config))
     }
 
     pub fn fetch_repository_configure(&self, branch_name: &str) -> Repository {
-        let conf = self.repo_mapping().get(branch_name);
+        let conf = self.mapping().get(branch_name);
         match conf {
-            None => {
-                RepositoryBuilder::new()
-                    .set_send_to(self.telegram().send_to().clone())
-                    .set_secrets(self.server().secrets())
-                    .build()
-            }
-            Some(repository) => repository.clone()
+            None => RepositoryBuilder::new()
+                .set_send_to(self.telegram().send_to().clone())
+                .set_secrets(self.server().secrets())
+                .set_is_default(true)
+                .build(),
+            Some(repository) => repository.clone(),
         }
+    }
+
+    pub fn build_repository_from_configure(
+        default_secret: &String,
+        default_target: &Vec<i64>,
+        repository: &TomlRepository,
+    ) -> Repository {
+        let secrets = match repository.secrets() {
+            None => default_secret.clone(),
+            Some(s) => s.clone(),
+        };
+        let send_to = match repository.send_to() {
+            None => default_target.clone(),
+            Some(v) => parse_value(v),
+        };
+        RepositoryBuilder::new()
+            .set_secrets(&secrets)
+            .set_branch_ignore(repository.branch_ignore.clone().unwrap_or_default())
+            .set_send_to(send_to)
+            .set_is_default(false)
+            .build()
     }
 }
 
 impl From<&TomlConfig> for Config {
     fn from(config: &TomlConfig) -> Self {
+        let real_secret = config.server().secrets().clone().unwrap_or_default();
+        let real_receiver = parse_value(config.telegram().send_to());
         Self {
             server: Server::from(config.server()),
             telegram: Telegram::from(config.telegram()),
-            repo_mapping: config.convert_hashmap(),
+            repo_mapping: {
+                let mut m = HashMap::new();
+                if let Some(repositories) = config.repository() {
+                    for repository in repositories {
+                        m.insert(
+                            repository.full_name().clone(),
+                            Config::build_repository_from_configure(
+                                &real_secret,
+                                &real_receiver,
+                                &repository,
+                            ),
+                        );
+                    }
+                }
+                m
+            },
         }
-    }
-}
-
-#[derive(Deserialize, Serialize, Clone)]
-pub struct TomlServer {
-    bind: String,
-    port: u16,
-    secrets: Option<String>,
-    token: Option<String>,
-}
-
-impl TomlServer {
-    pub fn bind(&self) -> &str {
-        &self.bind
-    }
-    pub fn port(&self) -> u16 {
-        self.port
-    }
-    pub fn secrets(&self) -> &Option<String> {
-        &self.secrets
-    }
-    pub fn token(&self) -> &Option<String> {
-        &self.token
     }
 }
 
@@ -361,5 +285,124 @@ impl Server {
     }
     pub fn token(&self) -> &str {
         &self.token
+    }
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct TomlRepository {
+    full_name: String,
+    send_to: Option<Value>,
+    branch_ignore: Option<Vec<String>>,
+    secrets: Option<String>,
+}
+
+impl TomlRepository {
+    pub fn full_name(&self) -> &String {
+        &self.full_name
+    }
+    pub fn send_to(&self) -> &Option<Value> {
+        &self.send_to
+    }
+    pub fn branch_ignore(&self) -> &Option<Vec<String>> {
+        &self.branch_ignore
+    }
+    pub fn secrets(&self) -> &Option<String> {
+        &self.secrets
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct Repository {
+    #[cfg(test)]
+    is_default: bool,
+    //full_name: String,
+    send_to: Vec<i64>,
+    branch_ignore: Vec<String>,
+    secrets: String,
+}
+
+impl Repository {
+    /*pub fn full_name(&self) -> &str {
+        &self.full_name
+    }*/
+    pub fn send_to(&self) -> &Vec<i64> {
+        &self.send_to
+    }
+    pub fn branch_ignore(&self) -> &Vec<String> {
+        &self.branch_ignore
+    }
+    pub fn secrets(&self) -> &String {
+        &self.secrets
+    }
+    #[cfg(test)]
+    pub fn is_default(&self) -> bool {
+        self.is_default
+    }
+}
+
+impl From<&TomlRepository> for Repository {
+    fn from(repo: &TomlRepository) -> Self {
+        Self {
+            //full_name: repo.full_name().clone(),
+            send_to: match repo.send_to() {
+                None => vec![],
+                Some(v) => parse_value(v),
+            },
+            branch_ignore: match repo.branch_ignore() {
+                Some(v) => v.clone(),
+                None => vec![],
+            },
+            secrets: match repo.secrets() {
+                None => "".to_string(),
+                Some(ref secret) => secret.clone(),
+            },
+            #[cfg(test)]
+            is_default: true,
+        }
+    }
+}
+
+#[derive(Debug, Default, Clone)]
+pub struct RepositoryBuilder {
+    send_to: Vec<i64>,
+    branch_ignore: Vec<String>,
+    secrets: String,
+    #[cfg(test)]
+    is_default: bool,
+}
+
+impl RepositoryBuilder {
+    pub fn set_send_to(&mut self, send_to: Vec<i64>) -> &mut Self {
+        self.send_to = send_to;
+        self
+    }
+    pub fn set_branch_ignore(&mut self, branch_ignore: Vec<String>) -> &mut Self {
+        self.branch_ignore = branch_ignore;
+        self
+    }
+    pub fn set_secrets(&mut self, secrets: &String) -> &mut Self {
+        self.secrets = secrets.clone();
+        self
+    }
+    #[cfg(test)]
+    pub fn set_is_default(&mut self, default: bool) -> &mut Self {
+        self.is_default = default;
+        self
+    }
+    pub fn build(&self) -> Repository {
+        Repository {
+            send_to: self.send_to.clone(),
+            branch_ignore: self.branch_ignore.clone(),
+            secrets: self.secrets.clone(),
+            #[cfg(test)]
+            is_default: self.is_default,
+        }
+    }
+    pub fn new() -> Self {
+        Self {
+            #[cfg(test)]
+            is_default: true,
+            ..Default::default()
+        }
     }
 }

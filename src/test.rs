@@ -19,10 +19,10 @@
 #[cfg(test)]
 mod test {
     use crate::configure::Config;
-    use crate::{DisplayableEvent, GitHubPingEvent, GitHubPushEvent};
+    use crate::{DisplayableEvent, GitHubEarlyParse, GitHubPingEvent, GitHubPushEvent};
+    use walkdir::WalkDir;
 
     #[test]
-    #[should_panic] // Will, just a joke
     fn test_configure() {
         let cfg = Config::new("example/sample.toml").unwrap();
         assert_eq!(cfg.server().bind(), "127.0.0.1:11451");
@@ -40,20 +40,36 @@ mod test {
                 .count(),
             result.len()
         );
-        let repositories = cfg.repo_mapping();
-        assert_eq!(repositories.len(), 3);
-        let r1 = repositories.get("MonsterSenpai/SummerNight-HornyFantasy");
-        assert!(r1.is_some());
-        let r1 = r1.unwrap();
-        assert!(r1.branch_ignore().is_empty());
-        assert!(!r1.send_to().is_empty());
-        assert_eq!(r1.send_to().len(), 6);
-        let r2 = repositories.get("BillyKing/Wrestling");
-        assert!(r2.is_some());
-        let r2 = r2.unwrap();
-        assert_eq!(r2.send_to().len(), 1);
-        assert_eq!(r2.branch_ignore().len(), 2);
-        assert_eq!(r2.secrets(), cfg.server().secrets());
+
+        // Test first repository
+        let repo = cfg.fetch_repository_configure("MonsterSenpai/SummerNight-HornyFantasy");
+        assert!(!repo.is_default());
+        assert!(repo.branch_ignore().is_empty());
+        assert!(!repo.send_to().is_empty());
+        assert_eq!(repo.send_to().len(), 6);
+
+        // Test second repository
+        let repo = cfg.fetch_repository_configure("BillyKing/Wrestling");
+        assert!(!repo.is_default());
+        assert_eq!(repo.send_to().len(), 1);
+        assert_eq!(repo.branch_ignore().len(), 2);
+        assert_eq!(repo.secrets(), cfg.server().secrets());
+
+        // Test third repository
+        let repo = cfg.fetch_repository_configure("sample/test");
+        assert!(!repo.is_default());
+        assert!(repo.branch_ignore().is_empty());
+        assert_eq!(
+            repo.send_to()
+                .into_iter()
+                .zip(&result)
+                .filter(|(a, b)| a == b)
+                .count(),
+            result.len()
+        );
+        assert_eq!(repo.secrets(), "2333");
+
+        // Test not exist repository
         let r_missing = cfg.fetch_repository_configure("114514/1919810");
         assert_eq!(r_missing.secrets(), cfg.server().secrets());
         assert!(r_missing.branch_ignore().is_empty());
@@ -90,5 +106,16 @@ mod test {
         let event: GitHubPushEvent = serde_json::from_str(s.as_str()).unwrap();
         assert_eq!(event.repository().full_name(), "MagomeYae/test-action");
         assert_eq!(event.branch_name(), "master");
+    }
+
+    #[test]
+    fn test_basic_parse() {
+        for entry in WalkDir::new("example") {
+            let entry = entry.unwrap();
+            if entry.path().ends_with(".json") {
+                let s = std::fs::read_to_string(entry.path()).unwrap();
+                let _event: GitHubEarlyParse = serde_json::from_str(s.as_str()).unwrap();
+            }
+        }
     }
 }
