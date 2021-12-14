@@ -234,7 +234,7 @@ impl From<&TomlConfig> for Config {
                             Config::build_repository_from_configure(
                                 &real_secret,
                                 &real_receiver,
-                                &repository,
+                                repository,
                             ),
                         );
                     }
@@ -387,6 +387,10 @@ impl RepositoryBuilder {
     #[cfg(test)]
     pub fn set_is_default(&mut self, default: bool) -> &mut Self {
         self.is_default = default;
+        self
+    }
+    #[cfg(not(test))]
+    pub fn set_is_default(&mut self, _: bool) -> &mut Self {
         self
     }
     pub fn build(&self) -> Repository {

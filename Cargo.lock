@@ -787,7 +787,7 @@ dependencies = [
 
 [[package]]
 name = "github-webhook-notification"
-version = "2.1.0-rc"
+version = "2.1.0-rc.2"
 dependencies = [
  "actix",
  "actix-rt",
