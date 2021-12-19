@@ -10,7 +10,7 @@ It consumes around 1.2GiB of RAM at maximum, together with a disk usage of 2GiB.
 
 **Please make sure you have abundant resources before compiling.**
 
-And you need an available rust compiler, `rustup`, for instance.
+And you need an available rust compiler, `rustup`, for example.
 
 ```sh
 git clone https://github.com/KunoiSayami/github-webhook-notification.rs.git
@@ -26,9 +26,9 @@ A typical location is `/usr/bin` for most Linux distributions.
 
 ## Install From Pre-built Executable
 
-If you are unable to compile, it's OK to download pre-built binary file from the [release page](https://github.com/KunoiSayami/github-webhook-notification.rs/releases/).
+If you are unable to compile, it's OK to download pre-built binary files from the [release page](https://github.com/KunoiSayami/github-webhook-notification.rs/releases/).
 
-Remember to make it executable.
+**Remember to make it executable.**
 
 <!--sudo curl -L https://github.com/KunoiSayami/github-webhook-notification.rs/releases/latest/download/github-webhook-notification_linux_amd64 -o /usr/bin/github-webhook-notification-->
 
@@ -38,7 +38,7 @@ Remember to make it executable.
 
 It looks like this.
 
-You can place it anywhere you like. But you must use `-c` parameter to specify the path of your configuration file.
+You can place it anywhere you like, but `-c` parameter is required to specify the path of your configuration file.
 
 ```toml
 # ./data/config.toml
