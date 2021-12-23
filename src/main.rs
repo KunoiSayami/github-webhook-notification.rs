@@ -31,7 +31,7 @@ use std::sync::Arc;
 use teloxide::prelude::{Request, Requester, RequesterExt, StreamExt};
 use teloxide::types::ParseMode;
 use teloxide::Bot;
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::{mpsc, RwLock};
 
 mod configure;
 mod datastructures;
@@ -97,7 +97,7 @@ async fn route_post(
     request: HttpRequest,
     mut payload: web::Payload,
     configure: web::Data<Config>,
-    data: web::Data<Arc<Mutex<ExtraData>>>,
+    data: web::Data<Arc<RwLock<ExtraData>>>,
 ) -> actix_web::Result<HttpResponse> {
     let mut body = web::BytesMut::new();
     while let Some(chunk) = payload.next().await {
@@ -112,7 +112,6 @@ async fn route_post(
 
     let body = body;
 
-    let sender = data.lock().await;
     let object = serde_json::from_slice::<GitHubEarlyParse>(&body);
     if let Err(ref e) = object {
         error!("Get parser error in pre-check stage: {:?}", &e);
@@ -157,6 +156,7 @@ async fn route_post(
             Ok(HttpResponse::Ok().json(Response::reason(200, request_body.zen())))
         }
         "push" => {
+            let sender = data.write().await;
             let event = serde_json::from_slice::<GitHubPushEvent>(&body)?;
             if check_0(event.after()) || check_0(event.before()) {
                 return Ok(HttpResponse::NoContent().finish());
@@ -190,7 +190,7 @@ async fn async_main<P: AsRef<Path>>(path: P) -> anyhow::Result<()> {
     let authorization_guard =
         crate::datastructures::AuthorizationGuard::from(config.server().token());
 
-    let extra_data = Arc::new(Mutex::new(ExtraData {
+    let extra_data = Arc::new(RwLock::new(ExtraData {
         bot_tx: bot_tx.clone(),
     }));
     let msg_sender = tokio::spawn(process_send_message(
