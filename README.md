@@ -71,7 +71,7 @@ Settings for the server.
 
   is the address you want this server to listen.
 
-  It's best to listen localhost.
+  It's best to listen localhost, behind some SSL/TLS frontend (like nginx), to ensure maximized security.
 
 - `port`
 
@@ -89,7 +89,7 @@ Settings for the server.
 
 - `token`
 
-  Token embedded in the URL.
+  is an optional token embedded in the URL.
 
   When using it, please append  `/?token=<your_token>` to your URL.
 
@@ -103,7 +103,7 @@ Global settings regarding Telegram.
 
   You can find it in  [Telegram@Botfather](https://t.me/botfather).
 
-  If you don't have a bot token, you can turn to it to create a new bot.
+  If you don't have a bot token, you can also turn to it to create a new bot.
 
 - `send_to`
 
