@@ -33,7 +33,7 @@ use std::fmt::Debug;
 use std::path::Path;
 use std::sync::Arc;
 use teloxide::prelude::{Request, Requester, RequesterExt};
-use teloxide::types::ParseMode;
+use teloxide::types::{ChatId, ParseMode};
 use teloxide::Bot;
 use tokio::sync::{mpsc, RwLock};
 use tower::ServiceBuilder;
@@ -83,7 +83,7 @@ async fn process_send_message(
         match cmd {
             Command::Bundle(bundle) => {
                 for send_to in bundle.receiver() {
-                    let mut payload = bot.send_message(*send_to, bundle.text());
+                    let mut payload = bot.send_message(ChatId(*send_to), bundle.text());
                     payload.disable_web_page_preview = Option::from(true);
                     if let Err(e) = payload.send().await {
                         error!("Got error in send message {:?}", e);
