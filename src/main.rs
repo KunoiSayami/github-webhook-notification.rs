@@ -17,21 +17,29 @@
 
 use crate::configure::Config;
 use crate::datastructures::{
-    CommandBundle, DisplayableEvent, GitHubEarlyParse, GitHubPingEvent, GitHubPushEvent, Response,
+    AuthorizationGuard, CommandBundle, DisplayableEvent, GitHubEarlyParse, GitHubPingEvent,
+    GitHubPushEvent, Response,
 };
-use actix_web::http::Method;
-use actix_web::web::Data;
-use actix_web::{web, App, HttpRequest, HttpResponse, HttpServer};
+use axum::body::{Body, HttpBody};
+use axum::http::{Request as HttpRequest, StatusCode};
+use axum::response::IntoResponse;
+use axum::{Extension, Router};
+use clap::arg;
 use hmac::{Hmac, Mac};
 use log::{debug, error, info, warn};
+use once_cell::sync::OnceCell;
 use sha2::Sha256;
 use std::fmt::Debug;
 use std::path::Path;
 use std::sync::Arc;
-use teloxide::prelude::{Request, Requester, RequesterExt, StreamExt};
+use teloxide::prelude::{Request, Requester, RequesterExt};
 use teloxide::types::ParseMode;
 use teloxide::Bot;
 use tokio::sync::{mpsc, RwLock};
+use tower::ServiceBuilder;
+use tower_http::trace::TraceLayer;
+
+static AUTH_TOKEN: OnceCell<String> = OnceCell::new();
 
 mod configure;
 mod datastructures;
@@ -94,20 +102,17 @@ fn check_0(s: &str) -> bool {
 }
 
 async fn route_post(
-    request: HttpRequest,
-    mut payload: web::Payload,
-    configure: web::Data<Config>,
-    data: web::Data<Arc<RwLock<ExtraData>>>,
-) -> actix_web::Result<HttpResponse> {
-    let mut body = web::BytesMut::new();
-    while let Some(chunk) = payload.next().await {
-        let chunk = chunk?;
-
+    mut request: HttpRequest<Body>,
+    Extension(configure): Extension<Config>,
+    Extension(data): Extension<Arc<RwLock<ExtraData>>>,
+) -> impl IntoResponse {
+    //let mut body = web::BytesMut::new();
+    let mut body: Vec<u8> = Vec::new();
+    while let Some(Ok(ref chunk)) = request.body_mut().data().await {
+        body.extend(chunk);
         if (body.len() + chunk.len()) > 262_144 {
-            return Ok(HttpResponse::BadRequest().json(Response::reason(400, "overflow")));
+            return Response::reason(400, "overflow");
         }
-
-        body.extend_from_slice(&chunk);
     }
 
     let body = body;
@@ -115,10 +120,10 @@ async fn route_post(
     let object = serde_json::from_slice::<GitHubEarlyParse>(&body);
     if let Err(ref e) = object {
         error!("Get parser error in pre-check stage: {:?}", &e);
-        error!("Raw data => {:?}", &body);
-        return Ok(HttpResponse::InternalServerError().finish());
+        error!("Raw data => {:?}", String::from_utf8_lossy(&body));
+        return Response::new(500);
     };
-    let object = object?;
+    let object = object.unwrap();
     let settings = configure.fetch_repository_configure(object.get_full_name());
 
     let secrets = settings.secrets();
@@ -130,40 +135,44 @@ async fn route_post(
         let sha256val = format!("sha256={:x}", result.into_bytes()).to_lowercase();
         if let Some(val) = request.headers().get("X-Hub-Signature-256") {
             if !sha256val.eq(val) {
-                return Ok(HttpResponse::Forbidden().json(Response::reason(403, "Checksum error")));
+                return Response::reason(403, "Checksum error");
             }
         } else {
-            return Ok(
-                HttpResponse::Forbidden().json(Response::reason(403, "Checksum header not found"))
-            );
+            return Response::reason(403, "Checksum header not found");
         }
     }
 
     let event_header = request.headers().get("X-GitHub-Event");
     if event_header.is_none() {
         error!("Unknown request: {:?}", request);
-        return Ok(HttpResponse::InternalServerError().finish());
+        return Response::new(500);
     }
     let event_header = event_header.unwrap().to_str();
     if let Err(ref e) = event_header {
         error!("Parse X-GitHub-Event error: {:?}", e);
-        return Ok(HttpResponse::InternalServerError().finish());
+        return Response::new(500);
     }
     let event_header = event_header.unwrap();
     match event_header {
         "ping" => {
-            let request_body = serde_json::from_slice::<GitHubPingEvent>(&body)?;
-            Ok(HttpResponse::Ok().json(Response::reason(200, request_body.zen())))
+            let request_body = match serde_json::from_slice::<GitHubPingEvent>(&body) {
+                Ok(ret) => ret,
+                Err(e) => return Response::new_parse_error(e),
+            };
+            Response::reason(200, request_body.zen())
         }
         "push" => {
-            let sender = data.write().await;
-            let event = serde_json::from_slice::<GitHubPushEvent>(&body)?;
+            let event = match serde_json::from_slice::<GitHubPushEvent>(&body) {
+                Ok(ret) => ret,
+                Err(e) => return Response::new_parse_error(e),
+            };
             if check_0(event.after()) || check_0(event.before()) {
-                return Ok(HttpResponse::NoContent().finish());
+                return Response::new_empty();
             }
             if settings.branch_ignore().contains(&event.branch_name()) {
-                Ok(HttpResponse::Ok().json(Response::reason(204, "Skipped.")))
+                Response::reason(204, "Skipped.")
             } else {
+                let sender = data.write().await;
                 sender
                     .bot_tx
                     .send(Command::Bundle(CommandBundle::new(
@@ -172,13 +181,10 @@ async fn route_post(
                     )))
                     .await
                     .unwrap();
-                Ok(HttpResponse::Ok().json(Response::new_ok()))
+                Response::new_ok()
             }
         }
-        _ => Ok(HttpResponse::BadRequest().json(Response::reason(
-            400,
-            format!("Unsupported event type {:?}", event_header),
-        ))),
+        _ => Response::reason(400, format!("Unsupported event type {:?}", event_header)),
     }
 }
 
@@ -187,8 +193,7 @@ async fn async_main<P: AsRef<Path>>(path: P) -> anyhow::Result<()> {
 
     let (bot_tx, bot_rx) = mpsc::channel(1024);
 
-    let authorization_guard =
-        crate::datastructures::AuthorizationGuard::from(config.server().token());
+    AUTH_TOKEN.set(config.server().token().to_string()).unwrap();
 
     let extra_data = Arc::new(RwLock::new(ExtraData {
         bot_tx: bot_tx.clone(),
@@ -202,30 +207,45 @@ async fn async_main<P: AsRef<Path>>(path: P) -> anyhow::Result<()> {
     let bind = config.server().bind().clone();
     info!("Bind address: {}", bind);
 
+    let router = Router::new()
+        .route(
+            "/",
+            axum::routing::post(route_post)
+                .layer(axum::middleware::from_extractor::<AuthorizationGuard>())
+                .layer(Extension(config.clone()))
+                .layer(Extension(extra_data.clone())),
+        )
+        .route("/", axum::routing::get(|| async { Response::new_ok() }))
+        .route("/", axum::routing::any(|| async { StatusCode::FORBIDDEN }))
+        .layer(ServiceBuilder::new().layer(TraceLayer::new_for_http()));
+
+    let handler = axum_server::Handle::new();
+
     let server = tokio::spawn(
-        HttpServer::new(move || {
-            App::new()
-                .wrap(actix_web::middleware::Logger::default())
-                .service(
-                    web::scope("/")
-                        .guard(authorization_guard.to_owned())
-                        .app_data(Data::new(config.clone()))
-                        .app_data(Data::new(extra_data.clone()))
-                        .route("", web::method(Method::POST).to(route_post)),
-                )
-                .service(web::scope("/").route(
-                    "",
-                    web::method(Method::GET).to(|| HttpResponse::Ok().json(Response::new_ok())),
-                ))
-                .route("/", web::to(HttpResponse::Forbidden))
-        })
-        .bind(bind)?
-        .run(),
+        axum_server::bind(bind.parse().unwrap())
+            .handle(handler.clone())
+            .serve(router.into_make_service()),
     );
 
-    server.await??;
+    tokio::select! {
+        _ = tokio::signal::ctrl_c() => {
+            handler.graceful_shutdown(None);
+        }
+        ret = server => {
+            ret??;
+        }
+    }
+
     bot_tx.send(Command::Terminate).await?;
-    msg_sender.await??;
+
+    tokio::select! {
+        _ = tokio::signal::ctrl_c() => {
+            warn!("Force exit from message sender");
+        }
+        ret = msg_sender => {
+            ret??;
+        }
+    }
 
     Ok(())
 }
@@ -235,24 +255,20 @@ fn main() -> anyhow::Result<()> {
         .filter_module("rustls::client", log::LevelFilter::Warn)
         .init();
 
-    let arg_matches = clap::App::new("github-webhook-notification")
-        .arg(
-            clap::Arg::with_name("cfg")
-                .long("cfg")
-                .short("c")
-                .default_value("data/config.toml")
-                .help("Specify configure file location")
-                .takes_value(true),
-        )
+    let arg_matches = clap::Command::new("github-webhook-notification")
+        .arg(arg!(-c --cfg <CONFIG> "Specify configure file location"))
         .version(SERVER_VERSION)
         .get_matches();
 
-    let system = actix::System::new();
     info!("Server version: {}", SERVER_VERSION);
 
-    system.block_on(async_main(arg_matches.value_of("cfg").unwrap()))?;
-
-    system.run()?;
+    tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(async_main(
+            arg_matches.value_of("cfg").unwrap_or("data/config.toml"),
+        ))?;
 
     Ok(())
 }

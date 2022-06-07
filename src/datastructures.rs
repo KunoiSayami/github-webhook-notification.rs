@@ -15,8 +15,8 @@
  ** along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-use actix_web::dev::RequestHead;
-use actix_web::guard::Guard;
+use crate::{IntoResponse, StatusCode, AUTH_TOKEN};
+use axum::extract::{FromRequest, RequestParts};
 use serde_derive::{Deserialize, Serialize};
 use std::fmt::{Debug, Formatter};
 use std::ops::Index;
@@ -204,12 +204,14 @@ impl std::fmt::Display for Repository {
 #[derive(Deserialize, Serialize, Debug, Default)]
 pub struct Response {
     version: String,
-    status: i64,
+    status: u16,
     reason: String,
+    #[serde(skip)]
+    empty: bool,
 }
 
 impl Response {
-    pub fn new(status: i64) -> Self {
+    pub fn new(status: u16) -> Self {
         Self {
             version: env!("CARGO_PKG_VERSION").to_string(),
             status,
@@ -221,75 +223,72 @@ impl Response {
         Self::new(200)
     }
 
-    pub fn reason<T: Into<String>>(status: i64, reason: T) -> Self {
+    pub fn reason<T: Into<String>>(status: u16, reason: T) -> Self {
         Self {
             version: env!("CARGO_PKG_VERSION").to_string(),
             status,
             reason: reason.into(),
+            empty: false,
         }
     }
-}
-
-#[derive(Clone)]
-pub struct AuthorizationGuard {
-    token: String,
-}
-
-impl AuthorizationGuard {
-    fn check_query(&self, query: &str) -> bool {
-        if query.contains('=') {
-            let (key, value) = query.split_once('=').unwrap();
-            if key == "token" && value.eq(&self.token) {
-                return true;
-            }
-        }
-        false
-    }
-}
-
-impl From<Option<String>> for AuthorizationGuard {
-    fn from(s: Option<String>) -> Self {
-        Self::from(&match s {
-            Some(s) => s,
-            None => "".to_string(),
-        })
-    }
-}
-
-impl From<&String> for AuthorizationGuard {
-    fn from(s: &String) -> Self {
-        Self { token: s.clone() }
-    }
-}
-
-impl From<&str> for AuthorizationGuard {
-    fn from(s: &str) -> Self {
+    pub fn new_empty() -> Self {
         Self {
-            token: s.to_string(),
+            version: env!("CARGO_PKG_VERSION").to_string(),
+            status: 204,
+            reason: "".to_string(),
+            empty: true,
         }
+    }
+    pub fn new_parse_error(e: serde_json::Error) -> Self {
+        Self::reason(500, e.to_string())
     }
 }
 
-impl Guard for AuthorizationGuard {
-    fn check(&self, request: &RequestHead) -> bool {
-        if self.token.is_empty() {
-            return true;
+impl IntoResponse for Response {
+    fn into_response(self) -> axum::response::Response {
+        if self.empty {
+            return (StatusCode::from_u16(204).unwrap(), "").into_response();
+        }
+        (
+            StatusCode::from_u16(self.status).expect("Wrong input in status code"),
+            serde_json::to_string(&self).unwrap(),
+        )
+            .into_response()
+    }
+}
+
+pub struct AuthorizationGuard {}
+
+#[async_trait::async_trait]
+impl<B> FromRequest<B> for AuthorizationGuard
+where
+    B: Send,
+{
+    type Rejection = StatusCode;
+
+    async fn from_request(req: &mut RequestParts<B>) -> Result<Self, Self::Rejection> {
+        let token = AUTH_TOKEN.get().unwrap();
+        if token.is_empty() {
+            return Ok(Self {});
         }
 
-        let uri = request.uri.to_string();
-        if uri.contains('?') {
-            let (_, queries) = uri.split_once('?').unwrap();
-            if queries.contains('&') {
-                for query in queries.split('&') {
-                    if self.check_query(query) {
-                        return true;
-                    }
+        let checker = |query: &str| {
+            if query.contains('=') {
+                let (key, value) = query.split_once('=').unwrap();
+                if key == "token" && value.eq(token) {
+                    return true;
                 }
-            } else if self.check_query(queries) {
-                return true;
+            }
+            false
+        };
+        if let Some(queries) = req.uri().query() {
+            for query in queries.split('&') {
+                if checker(query) {
+                    return Ok(Self {});
+                }
             }
         }
-        false
+        Err(StatusCode::FORBIDDEN)
     }
 }
 

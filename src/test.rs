@@ -76,7 +76,7 @@ mod test {
         assert_eq!(r_missing.send_to(), cfg.telegram().send_to());
     }
 
-    // src: https://docs.rs/actix-web/4.0.0-beta.14/actix_web/test/struct.TestRequest.html
+    /*// src: https://docs.rs/actix-web/4.0.0-beta.14/actix_web/test/struct.TestRequest.html
     #[actix_web::test]
     async fn test_init_service() {
         use actix_web::dev::Service;
@@ -91,7 +91,7 @@ mod test {
         // Execute application
         let resp = app.call(req).await.unwrap();
         assert_eq!(resp.status(), actix_web::http::StatusCode::OK);
-    }
+    }*/
 
     #[test]
     fn test_parse_ping() {
