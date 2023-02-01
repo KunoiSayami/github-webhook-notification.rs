@@ -189,7 +189,7 @@ async fn route_post(
 }
 
 async fn async_main<P: AsRef<Path>>(path: P) -> anyhow::Result<()> {
-    let config = crate::configure::Config::new(path)?;
+    let config = Config::new(path)?;
 
     let (bot_tx, bot_rx) = mpsc::channel(1024);
 

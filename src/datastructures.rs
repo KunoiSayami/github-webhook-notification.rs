@@ -100,7 +100,7 @@ impl GitHubPushEvent {
 
 impl std::fmt::Display for GitHubPushEvent {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let branch = self.remote_ref().rsplit_once("/").unwrap().1;
+        let branch = self.remote_ref().rsplit_once('/').unwrap().1;
         let git_ref = format!("{}:{}", self.repository(), branch);
         if self.commits.len() == 1 {
             let item = self.commits().index(0);
@@ -162,7 +162,7 @@ impl Commit {
     pub fn display(&self, title_only: bool) -> String {
         let content = if title_only {
             if self.message.contains('\n') {
-                self.message().split_once("\n").unwrap().0
+                self.message().split_once('\n').unwrap().0
             } else {
                 self.message()
             }
