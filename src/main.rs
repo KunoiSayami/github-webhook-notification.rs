@@ -104,6 +104,16 @@ fn check_0(s: &str) -> bool {
     s.chars().into_iter().all(|x| x == '0')
 }
 
+/// Compute the GitHub-style `X-Hub-Signature-256` value (`sha256=<hexdigest>`)
+/// for the given secret and request body.
+fn compute_signature(secret: &[u8], body: &[u8]) -> String {
+    type HmacSha256 = Hmac<Sha256>;
+    let mut h = HmacSha256::new_from_slice(secret).unwrap();
+    h.update(body);
+    let result = h.finalize();
+    format!("sha256={}", hex::encode(result.into_bytes()))
+}
+
 async fn route_post(
     _guard: AuthorizationGuard,
     Extension(configure): Extension<Config>,
@@ -130,11 +140,7 @@ async fn route_post(
 
     let secrets = settings.secrets();
     if !secrets.is_empty() {
-        type HmacSha256 = Hmac<Sha256>;
-        let mut h = HmacSha256::new_from_slice(secrets.as_bytes()).unwrap();
-        h.update(&*body);
-        let result = h.finalize();
-        let sha256val = format!("sha256={}", hex::encode(result.into_bytes()));
+        let sha256val = compute_signature(secrets.as_bytes(), &body);
         if let Some(val) = parts.headers.get("X-Hub-Signature-256") {
             if !sha256val.eq(val) {
                 return Response::reason(403, "Checksum error");

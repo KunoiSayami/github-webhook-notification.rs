@@ -19,7 +19,9 @@
 #[cfg(test)]
 mod test {
     use crate::configure::Config;
-    use crate::{DisplayableEvent, GitHubEarlyParse, GitHubPingEvent, GitHubPushEvent};
+    use crate::{
+        DisplayableEvent, GitHubEarlyParse, GitHubPingEvent, GitHubPushEvent, compute_signature,
+    };
     use walkdir::WalkDir;
 
     #[test]
@@ -110,12 +112,25 @@ mod test {
 
     #[test]
     fn test_basic_parse() {
+        let mut parsed = 0;
         for entry in WalkDir::new("example") {
             let entry = entry.unwrap();
-            if entry.path().ends_with(".json") {
+            if entry.path().extension().is_some_and(|ext| ext == "json") {
                 let s = std::fs::read_to_string(entry.path()).unwrap();
                 let _event: GitHubEarlyParse = serde_json::from_str(s.as_str()).unwrap();
+                parsed += 1;
             }
         }
+        assert!(parsed > 0, "expected at least one example JSON to parse");
+    }
+
+    #[test]
+    fn test_compute_signature() {
+        // GitHub's documented example:
+        // https://docs.github.com/en/webhooks/using-webhooks/validating-webhook-deliveries
+        assert_eq!(
+            compute_signature(b"It's a Secret to Everybody", b"Hello, World!"),
+            "sha256=757107ea0eb2509fc211221cce984b8a37570b6d7586c22c46f4379c8b043e17"
+        );
     }
 }
