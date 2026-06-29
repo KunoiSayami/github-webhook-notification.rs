@@ -15,9 +15,8 @@
  ** along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-use crate::{AUTH_TOKEN, IntoResponse, StatusCode};
-use axum::extract::FromRequestParts;
-use axum::http::request::Parts;
+use axum::http::StatusCode;
+use axum::response::IntoResponse;
 use serde_derive::{Deserialize, Serialize};
 use std::fmt::{Debug, Formatter};
 use std::ops::Index;
@@ -255,40 +254,6 @@ impl IntoResponse for Response {
             serde_json::to_string(&self).unwrap(),
         )
             .into_response()
-    }
-}
-
-pub struct AuthorizationGuard {}
-
-impl<S> FromRequestParts<S> for AuthorizationGuard
-where
-    S: Send + Sync,
-{
-    type Rejection = StatusCode;
-
-    async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
-        let token = AUTH_TOKEN.get().unwrap();
-        if token.is_empty() {
-            return Ok(Self {});
-        }
-
-        let checker = |query: &str| {
-            if query.contains('=') {
-                let (key, value) = query.split_once('=').unwrap();
-                if key == "token" && value.eq(token) {
-                    return true;
-                }
-            }
-            false
-        };
-        if let Some(queries) = parts.uri.query() {
-            for query in queries.split('&') {
-                if checker(query) {
-                    return Ok(Self {});
-                }
-            }
-        }
-        Err(StatusCode::FORBIDDEN)
     }
 }
 

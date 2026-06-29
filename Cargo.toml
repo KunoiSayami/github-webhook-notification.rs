@@ -3,6 +3,14 @@ name = "github-webhook-notification"
 version = "4.0.0"
 edition = "2024"
 
+[lib]
+name = "github_webhook_notification"
+path = "src/lib.rs"
+
+[[bin]]
+name = "github-webhook-notification"
+path = "src/main.rs"
+
 [dependencies]
 anyhow = "1"
 async-trait = "0.1.56"
