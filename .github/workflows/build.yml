@@ -1,65 +1,117 @@
-name: Build binary
+name: Build Releases
 
 on:
   push:
-    tags:
-      - v**
-  pull_request:
+
+  workflow_dispatch:
+    branches:
+      - master
+    pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
 
 jobs:
   build:
     strategy:
-      fail-fast: true
       matrix:
         job:
-          - { os: macos-latest }
-          - { os: ubuntu-latest }
-          - { os: windows-latest }
-
+          - os: macos-latest
+          - os: ubuntu-latest
+          - os: windows-latest
 
     name: Build
     runs-on: ${{ matrix.job.os }}
+    env:
+      RUST_BACKTRACE: full
+
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: stable
-          override: true
-      - name: Build binary
-        uses: actions-rs/cargo@v1
-        with:
-          command: build
-          args: --release
-      - name: Running test
-        uses: actions-rs/cargo@v1
-        with:
-          command: test
-          args: --release
-      - name: Rename binary
-        id: rename
+      - uses: actions/checkout@v7
+      - name: Determine Binary Name
+        id: determine-os
         shell: bash
         run: |
           if [ "$RUNNER_OS" == "Linux" ]; then
-            BIN='github-webhook-notification_linux_amd64'
-            mv target/release/github-webhook-notification target/release/$BIN
-          elif [ "$RUNNER_OS" == "macOS" ]; then
-            BIN='github-webhook-notification_darwin_amd64'
-            mv target/release/github-webhook-notification target/release/$BIN
-          else
-            BIN='github-webhook-notification_windows_amd64.exe'
-            mv target/release/github-webhook-notification.exe target/release/$BIN
+            BINARY=github-webhook-notification_linux_amd64
+          elif [ "$RUNNER_OS" == "Windows" ]; then
+            BINARY=github-webhook-notification_windows_amd64.exe
+          else # macOS
+            BINARY=github-webhook-notification_darwin_arm64
           fi
-          echo "::set-output name=bin::target/release/$BIN"
-      - uses: actions/upload-artifact@v2
+          echo "binary_name=$BINARY" >> $GITHUB_OUTPUT
+      - name: Cache Cargo packages
+        id: cache-cargo
+        uses: actions/cache@v6
         with:
-          name: artifact
+          key: ${{ runner.os }}-cargo
           path: |
-            target/release/github-webhook-notification_*
+            ~/.cargo
+            ~/.rustup
+            $PWD/target
+      - if: ${{ steps.cache-cargo.outputs.cache-hit != 'true' }}
+        name: Update rust
+        run: rustup update
+      - name: Build binary
+        run: cargo build --profile release
+      - name: Running tests
+        run: cargo test --profile release
+      - name: Rename binary
+        id: rename
+        shell: bash
+        env:
+          BINARY_NAME: ${{ steps.determine-os.outputs.binary_name }}
+        run: |
+          if [ "$RUNNER_OS" == "Windows" ]; then
+            mv target/release/github-webhook-notification.exe target/release/$BINARY_NAME
+          else
+            mv target/release/github-webhook-notification target/release/$BINARY_NAME
+          fi
+          echo "bin=target/release/$BINARY_NAME" >> $GITHUB_OUTPUT
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ${{ steps.determine-os.outputs.binary_name }}
+          path: target/release/${{ steps.determine-os.outputs.binary_name }}
       - name: Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v3
         if: startsWith(github.ref, 'refs/tags/')
         with:
           files: ${{ steps.rename.outputs.bin }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  build_aarch64:
+    name: Cross build
+    runs-on: ubuntu-latest
+    env:
+      RUST_BACKTRACE: full
+
+    steps:
+      - uses: actions/checkout@v7
+      - name: Cache Cargo packages
+        id: cache-cargo
+        uses: actions/cache@v6
+        with:
+          key: ${{ runner.os }}-cargo-cross
+          path: |
+            ~/.cargo
+            ~/.rustup
+            ~/work/github-webhook-notification.rs/github-webhook-notification.rs/target
+      - if: ${{ steps.cache-cargo.outputs.cache-hit != 'true' }}
+        name: Update rust
+        run: rustup update && rustup target install aarch64-unknown-linux-musl
+      - name: Install cross
+        run: cargo install cross
+      - name: Build binary
+        run: cross build --target aarch64-unknown-linux-musl --profile release
+      - run: mv target/aarch64-unknown-linux-musl/release/github-webhook-notification target/aarch64-unknown-linux-musl/release/github-webhook-notification_linux_aarch64
+      - uses: actions/upload-artifact@v7
+        with:
+          name: github-webhook-notification_linux_aarch64
+          path: target/aarch64-unknown-linux-musl/release/github-webhook-notification_linux_aarch64
+      - name: Release
+        uses: softprops/action-gh-release@v3
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: target/aarch64-unknown-linux-musl/release/github-webhook-notification_linux_aarch64
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
