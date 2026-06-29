@@ -15,8 +15,9 @@
  ** along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-use crate::{IntoResponse, StatusCode, AUTH_TOKEN};
-use axum::extract::{FromRequest, RequestParts};
+use crate::{AUTH_TOKEN, IntoResponse, StatusCode};
+use axum::extract::FromRequestParts;
+use axum::http::request::Parts;
 use serde_derive::{Deserialize, Serialize};
 use std::fmt::{Debug, Formatter};
 use std::ops::Index;
@@ -259,14 +260,13 @@ impl IntoResponse for Response {
 
 pub struct AuthorizationGuard {}
 
-#[async_trait::async_trait]
-impl<B> FromRequest<B> for AuthorizationGuard
+impl<S> FromRequestParts<S> for AuthorizationGuard
 where
-    B: Send,
+    S: Send + Sync,
 {
     type Rejection = StatusCode;
 
-    async fn from_request(req: &mut RequestParts<B>) -> Result<Self, Self::Rejection> {
+    async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
         let token = AUTH_TOKEN.get().unwrap();
         if token.is_empty() {
             return Ok(Self {});
@@ -281,7 +281,7 @@ where
             }
             false
         };
-        if let Some(queries) = req.uri().query() {
+        if let Some(queries) = parts.uri.query() {
             for query in queries.split('&') {
                 if checker(query) {
                     return Ok(Self {});

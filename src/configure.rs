@@ -258,9 +258,9 @@ impl From<&TomlServer> for Server {
         if s.secrets().is_none() && s.token().is_none() {
             eprintln!("{}", warning);
             warn!("{}", warning);
-        } else if let Some(ref secrets) = s.secrets() {
+        } else if let Some(secrets) = s.secrets() {
             if secrets.is_empty() {
-                if let Some(ref token) = s.token() {
+                if let Some(token) = s.token() {
                     if token.is_empty() {
                         eprintln!("{}", warning);
                         warn!("{}", warning)
@@ -354,7 +354,7 @@ impl From<&TomlRepository> for Repository {
             },
             secrets: match repo.secrets() {
                 None => "".to_string(),
-                Some(ref secret) => secret.clone(),
+                Some(secret) => secret.clone(),
             },
             #[cfg(test)]
             is_default: true,

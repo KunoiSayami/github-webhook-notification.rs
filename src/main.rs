@@ -20,26 +20,28 @@ use crate::datastructures::{
     AuthorizationGuard, CommandBundle, DisplayableEvent, GitHubEarlyParse, GitHubPingEvent,
     GitHubPushEvent, Response,
 };
-use axum::body::{Body, HttpBody};
+use axum::body::Body;
 use axum::http::{Request as HttpRequest, StatusCode};
 use axum::response::IntoResponse;
 use axum::{Extension, Router};
 use clap::arg;
-use hmac::{Hmac, Mac};
+use hex;
+use hmac::{Hmac, KeyInit, Mac};
+use http_body_util::BodyExt;
 use log::{debug, error, info, warn};
-use once_cell::sync::OnceCell;
 use sha2::Sha256;
 use std::fmt::Debug;
 use std::path::Path;
-use std::sync::Arc;
-use teloxide::prelude::{Request, Requester, RequesterExt};
-use teloxide::types::{ChatId, ParseMode};
+use std::sync::{Arc, OnceLock};
 use teloxide::Bot;
-use tokio::sync::{mpsc, RwLock};
+use teloxide::prelude::{Request, Requester, RequesterExt};
+use teloxide::sugar::request::RequestLinkPreviewExt;
+use teloxide::types::{ChatId, ParseMode};
+use tokio::sync::{RwLock, mpsc};
 use tower::ServiceBuilder;
 use tower_http::trace::TraceLayer;
 
-static AUTH_TOKEN: OnceCell<String> = OnceCell::new();
+static AUTH_TOKEN: OnceLock<String> = OnceLock::new();
 
 mod configure;
 mod datastructures;
@@ -83,8 +85,9 @@ async fn process_send_message(
         match cmd {
             Command::Bundle(bundle) => {
                 for send_to in bundle.receiver() {
-                    let mut payload = bot.send_message(ChatId(*send_to), bundle.text());
-                    payload.disable_web_page_preview = Option::from(true);
+                    let payload = bot
+                        .send_message(ChatId(*send_to), bundle.text())
+                        .disable_link_preview(true);
                     if let Err(e) = payload.send().await {
                         error!("Got error in send message {:?}", e);
                     }
@@ -102,20 +105,19 @@ fn check_0(s: &str) -> bool {
 }
 
 async fn route_post(
-    mut request: HttpRequest<Body>,
+    _guard: AuthorizationGuard,
     Extension(configure): Extension<Config>,
     Extension(data): Extension<Arc<RwLock<ExtraData>>>,
+    request: HttpRequest<Body>,
 ) -> impl IntoResponse {
-    //let mut body = web::BytesMut::new();
-    let mut body: Vec<u8> = Vec::new();
-    while let Some(Ok(ref chunk)) = request.body_mut().data().await {
-        body.extend(chunk);
-        if (body.len() + chunk.len()) > 262_144 {
-            return Response::reason(400, "overflow");
-        }
+    let (parts, body_stream) = request.into_parts();
+    let body = match body_stream.collect().await {
+        Ok(collected) => collected.to_bytes(),
+        Err(_) => return Response::reason(400, "failed to read body"),
+    };
+    if body.len() > 262_144 {
+        return Response::reason(400, "overflow");
     }
-
-    let body = body;
 
     let object = serde_json::from_slice::<GitHubEarlyParse>(&body);
     if let Err(ref e) = object {
@@ -132,8 +134,8 @@ async fn route_post(
         let mut h = HmacSha256::new_from_slice(secrets.as_bytes()).unwrap();
         h.update(&*body);
         let result = h.finalize();
-        let sha256val = format!("sha256={:x}", result.into_bytes()).to_lowercase();
-        if let Some(val) = request.headers().get("X-Hub-Signature-256") {
+        let sha256val = format!("sha256={}", hex::encode(result.into_bytes()));
+        if let Some(val) = parts.headers.get("X-Hub-Signature-256") {
             if !sha256val.eq(val) {
                 return Response::reason(403, "Checksum error");
             }
@@ -142,9 +144,9 @@ async fn route_post(
         }
     }
 
-    let event_header = request.headers().get("X-GitHub-Event");
+    let event_header = parts.headers.get("X-GitHub-Event");
     if event_header.is_none() {
-        error!("Unknown request: {:?}", request);
+        error!("Unknown request: {:?}", parts);
         return Response::new(500);
     }
     let event_header = event_header.unwrap().to_str();
@@ -208,18 +210,14 @@ async fn async_main<P: AsRef<Path>>(path: P) -> anyhow::Result<()> {
     info!("Bind address: {}", bind);
 
     let router = Router::new()
-        .route(
-            "/",
-            axum::routing::post(route_post)
-                .layer(axum::middleware::from_extractor::<AuthorizationGuard>())
-                .layer(Extension(config.clone()))
-                .layer(Extension(extra_data.clone())),
-        )
+        .route("/", axum::routing::post(route_post))
         .route("/", axum::routing::get(|| async { Response::new_ok() }))
         .route("/", axum::routing::any(|| async { StatusCode::FORBIDDEN }))
+        .layer(Extension(config.clone()))
+        .layer(Extension(extra_data.clone()))
         .layer(ServiceBuilder::new().layer(TraceLayer::new_for_http()));
 
-    let handler = axum_server::Handle::new();
+    let handler = axum_server::Handle::<std::net::SocketAddr>::new();
 
     let server = tokio::spawn(
         axum_server::bind(bind.parse().unwrap())
@@ -267,7 +265,10 @@ fn main() -> anyhow::Result<()> {
         .build()
         .unwrap()
         .block_on(async_main(
-            arg_matches.value_of("cfg").unwrap_or("data/config.toml"),
+            arg_matches
+                .get_one::<String>("cfg")
+                .map(|s| s.as_str())
+                .unwrap_or("data/config.toml"),
         ))?;
 
     Ok(())
