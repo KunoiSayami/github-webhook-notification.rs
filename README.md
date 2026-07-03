@@ -1,4 +1,4 @@
-# GitHub webhook notifications
+# GitHub webhook notification
 
 A webhook server that forwards GitHub webhook events to Telegram. Can be used as a standalone binary or embedded as a library in another Rust project.
 
@@ -192,7 +192,7 @@ let router = build_router(state);
 
 [![](https://www.gnu.org/graphics/agplv3-155x51.png)](https://www.gnu.org/licenses/agpl-3.0.txt)
 
-Copyright (C) 2021 KunoiSayami
+Copyright (C) 2021-2026 KunoiSayami
 
 This program is free software: you can redistribute it and/or modify it under the terms of the GNU Affero General Public License as published by the Free Software Foundation, either version 3 of the License, or any later version.
 

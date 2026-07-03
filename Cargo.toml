@@ -1,7 +1,11 @@
 [package]
 name = "github-webhook-notification"
-version = "4.0.1"
+version = "5.0.0"
 edition = "2024"
+description = "A webhook server that forwards GitHub webhook events to Telegram. Usable as a standalone binary or embedded as a library."
+license = "AGPL-3.0"
+repository = "https://github.com/KunoiSayami/github-webhook-notification.rs"
+readme = "README.md"
 
 [lib]
 name = "github_webhook_notification"

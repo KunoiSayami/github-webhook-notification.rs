@@ -199,7 +199,7 @@ async fn route_post(
                     .bot_tx
                     .send(Command::Bundle(CommandBundle::new(
                         settings.send_to().clone(),
-                        event.to_string(),
+                        event.render(settings.verbose()),
                     )))
                     .await
                     .unwrap();

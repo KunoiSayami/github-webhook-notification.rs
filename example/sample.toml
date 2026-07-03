@@ -20,3 +20,8 @@ branch_ignore = ["test", "2323"]
 [[repository]]
 full_name = "sample/test"
 secrets = "2333"
+
+[[repository]]
+full_name = "sample/verbose-example"
+# When true, show the full commit message body instead of just the title line.
+verbose = true

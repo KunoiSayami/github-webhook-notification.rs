@@ -104,8 +104,12 @@ impl GitHubPushEvent {
     }
 }
 
-impl std::fmt::Display for GitHubPushEvent {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+impl GitHubPushEvent {
+    /// Render the notification text.
+    ///
+    /// When `verbose` is `false` (the default), only the first line of each
+    /// commit message is shown. Pass `true` to include the full commit body.
+    pub fn render(&self, verbose: bool) -> String {
         let branch = self.remote_ref().rsplit_once('/').unwrap().1;
         let git_ref = format!(
             "{}:{}",
@@ -114,23 +118,21 @@ impl std::fmt::Display for GitHubPushEvent {
         );
         if self.commits.len() == 1 {
             let item = self.commits().index(0);
-            write!(
-                f,
+            format!(
                 "🔨 <a href=\"{url}\">{count} new commit</a> <b>to {git_ref}</b>:\n\n{commits}",
                 url = escape_html(item.url()),
                 count = 1,
                 git_ref = git_ref,
-                commits = item
+                commits = item.display(!verbose)
             )
         } else {
             let l = self
                 .commits
                 .iter()
-                .map(|x| x.display(true))
+                .map(|x| x.display(!verbose))
                 .collect::<Vec<String>>()
                 .join("\n");
-            write!(
-                f,
+            format!(
                 "🔨 <a href=\"{url}\">{count} new commits</a> <b>to {git_ref}</b>:\n\n{commits}",
                 url = escape_html(self.compare()),
                 count = self.commits.len(),
@@ -138,6 +140,12 @@ impl std::fmt::Display for GitHubPushEvent {
                 commits = l,
             )
         }
+    }
+}
+
+impl std::fmt::Display for GitHubPushEvent {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.render(false))
     }
 }
 

@@ -213,6 +213,7 @@ impl Config {
             .set_secrets(&secrets)
             .set_branch_ignore(repository.branch_ignore.clone().unwrap_or_default())
             .set_send_to(send_to)
+            .set_verbose(repository.verbose())
             .set_is_default(false)
             .build()
     }
@@ -294,6 +295,7 @@ pub struct TomlRepository {
     send_to: Option<Value>,
     branch_ignore: Option<Vec<String>>,
     secrets: Option<String>,
+    verbose: Option<bool>,
 }
 
 impl TomlRepository {
@@ -309,6 +311,9 @@ impl TomlRepository {
     pub fn secrets(&self) -> &Option<String> {
         &self.secrets
     }
+    pub fn verbose(&self) -> bool {
+        self.verbose.unwrap_or(false)
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -319,6 +324,7 @@ pub struct Repository {
     send_to: Vec<i64>,
     branch_ignore: Vec<String>,
     secrets: String,
+    verbose: bool,
 }
 
 impl Repository {
@@ -333,6 +339,9 @@ impl Repository {
     }
     pub fn secrets(&self) -> &String {
         &self.secrets
+    }
+    pub fn verbose(&self) -> bool {
+        self.verbose
     }
     #[cfg(test)]
     pub fn is_default(&self) -> bool {
@@ -356,6 +365,7 @@ impl From<&TomlRepository> for Repository {
                 None => "".to_string(),
                 Some(secret) => secret.clone(),
             },
+            verbose: repo.verbose(),
             #[cfg(test)]
             is_default: true,
         }
@@ -367,6 +377,7 @@ pub struct RepositoryBuilder {
     send_to: Vec<i64>,
     branch_ignore: Vec<String>,
     secrets: String,
+    verbose: bool,
     #[cfg(test)]
     is_default: bool,
 }
@@ -384,6 +395,10 @@ impl RepositoryBuilder {
         self.secrets = secrets.clone();
         self
     }
+    pub fn set_verbose(&mut self, verbose: bool) -> &mut Self {
+        self.verbose = verbose;
+        self
+    }
     #[cfg(test)]
     pub fn set_is_default(&mut self, default: bool) -> &mut Self {
         self.is_default = default;
@@ -398,6 +413,7 @@ impl RepositoryBuilder {
             send_to: self.send_to.clone(),
             branch_ignore: self.branch_ignore.clone(),
             secrets: self.secrets.clone(),
+            verbose: self.verbose,
             #[cfg(test)]
             is_default: self.is_default,
         }
