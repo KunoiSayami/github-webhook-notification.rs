@@ -715,7 +715,7 @@ dependencies = [
 
 [[package]]
 name = "github-webhook-notification"
-version = "4.0.0"
+version = "4.0.1"
 dependencies = [
  "anyhow",
  "async-trait",

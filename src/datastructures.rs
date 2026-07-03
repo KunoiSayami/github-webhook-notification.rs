@@ -21,6 +21,12 @@ use serde_derive::{Deserialize, Serialize};
 use std::fmt::{Debug, Formatter};
 use std::ops::Index;
 
+fn escape_html(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+}
+
 pub trait DisplayableEvent: std::fmt::Display + Debug + Send + Sync {
     fn get_full_name(&self) -> &String;
 
@@ -101,13 +107,17 @@ impl GitHubPushEvent {
 impl std::fmt::Display for GitHubPushEvent {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let branch = self.remote_ref().rsplit_once('/').unwrap().1;
-        let git_ref = format!("{}:{}", self.repository(), branch);
+        let git_ref = format!(
+            "{}:{}",
+            escape_html(&self.repository().to_string()),
+            escape_html(branch)
+        );
         if self.commits.len() == 1 {
             let item = self.commits().index(0);
             write!(
                 f,
                 "🔨 <a href=\"{url}\">{count} new commit</a> <b>to {git_ref}</b>:\n\n{commits}",
-                url = item.url(),
+                url = escape_html(item.url()),
                 count = 1,
                 git_ref = git_ref,
                 commits = item
@@ -122,7 +132,7 @@ impl std::fmt::Display for GitHubPushEvent {
             write!(
                 f,
                 "🔨 <a href=\"{url}\">{count} new commits</a> <b>to {git_ref}</b>:\n\n{commits}",
-                url = self.compare(),
+                url = escape_html(self.compare()),
                 count = self.commits.len(),
                 git_ref = git_ref,
                 commits = l,
@@ -171,9 +181,9 @@ impl Commit {
         };
         format!(
             "<a href=\"{url}\">{commit_id}</a>: {content}",
-            url = self.url(),
+            url = escape_html(self.url()),
             commit_id = &self.id()[..8],
-            content = content
+            content = escape_html(content)
         )
     }
 }
